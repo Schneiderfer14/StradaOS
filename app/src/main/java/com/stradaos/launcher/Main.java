@@ -528,10 +528,17 @@ public class Main extends Activity {
         railBg.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{RAIL_A, RAIL_B}));
         FrameLayout.LayoutParams rlp = new FrameLayout.LayoutParams((int) ((W - 1024 * s) / 2 + RAIL_W * s), ViewGroup.LayoutParams.MATCH_PARENT);
         rlp.gravity = Gravity.LEFT;
-        if (SDK >= 21) railBg.setElevation(12 * s);
         root.addView(railBg, rlp);
+        // sombra de la columna sobre el mapa. Sin elevación a propósito: los ajustes y el cajón de apps
+        // se agregan después a root y tienen que quedar por encima de la pantalla de inicio.
+        View railShadow = new View(this);
+        railShadow.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{LIGHT ? 0x33141E2D : 0x80000000, 0x00000000}));
+        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams((int) (16 * s), ViewGroup.LayoutParams.MATCH_PARENT);
+        slp.gravity = Gravity.LEFT;
+        slp.leftMargin = rlp.width;
+        root.addView(railShadow, slp);
         root.addView(board, blp);
-        if (SDK >= 21) board.setElevation(13 * s);
 
         buildRail();
         buildTop();
@@ -678,18 +685,20 @@ public class Main extends Activity {
         place(board, card, 724, 64, 284, 176);
         lift(card, 10);
 
+        // nombre y etiqueta en una fila: la etiqueta se ve completa y el nombre usa el espacio que sobra
+        LinearLayout head = new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
         carTv = tv(prefs.getString("car_name", "Mi vehículo"), 19, TEXT, true);
-        place(card, carTv, 16, 14, 160, 24);
-        FrameLayout chipBox = new FrameLayout(this);
+        head.addView(carTv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView chip = tv(prefs.getString("car_tag", ""), 12, Color.WHITE, true);
         chipTv = chip;
         chip.setPadding((int) (8 * s), (int) (3 * s), (int) (8 * s), (int) (3 * s));
         chip.setBackground(round(0xFFD23C3C, 6));
         chip.setVisibility(prefs.getString("car_tag", "").trim().length() == 0 ? View.GONE : View.VISIBLE);
-        FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(-2, -2);
-        clp.gravity = Gravity.RIGHT | Gravity.CENTER_VERTICAL;
-        chipBox.addView(chip, clp);
-        place(card, chipBox, 176, 12, 92, 26);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, -2);
+        clp.leftMargin = (int) (8 * s);
+        head.addView(chip, clp);
+        place(card, head, 16, 12, 252, 26);
 
         FrameLayout photoBox = new FrameLayout(this);
         GradientDrawable pb = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{INNER_A, INNER_B});
@@ -869,10 +878,10 @@ public class Main extends Activity {
         ImageView gi = icon("navigation", 22);
         gi.setColorFilter(onAccent());
         go.addView(gi, new LinearLayout.LayoutParams((int) (22 * s), (int) (22 * s)));
-        TextView gt = tv("Ir a", 17, onAccent(), true);
+        TextView gt = tv("Navegar", 17, onAccent(), true);
         gt.setPadding((int) (8 * s), 0, 0, 0);
         go.addView(gt);
-        place(board, go, 604, 484, 100, 56);
+        place(board, go, 584, 484, 120, 56);
         lift(go, 8);
         go.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { openNavigation(); }
