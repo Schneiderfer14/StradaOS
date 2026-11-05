@@ -53,7 +53,7 @@ public class LiveMapView extends View {
     private final boolean hi;                   // teselas @2x en pantallas densas
     private final File dir;
     private final Handler ui = new Handler(Looper.getMainLooper());
-    private final LruCache<String, Bitmap> mem = new LruCache<String, Bitmap>(48);
+    private final LruCache<String, Bitmap> mem = new LruCache<String, Bitmap>(72);
     private final HashSet<String> pending = new HashSet<String>();
     private final HashSet<String> failed = new HashSet<String>();
     private final LinkedList<String> queue = new LinkedList<String>();
@@ -77,7 +77,11 @@ public class LiveMapView extends View {
         s = scale;
         radius = radiusPx;
         hi = scale >= 1.4f;
-        dir = new File(c.getCacheDir(), "tiles_v3");   // v3: se guarda la tesela original; el estilo se aplica al mostrarla
+        // Las teselas van en la memoria interna permanente (Android no la borra como la caché),
+        // así el mapa de las zonas recorridas queda disponible sin internet.
+        dir = new File(c.getFilesDir(), "tiles_v3");   // v3: se guarda la tesela original; el estilo se aplica al mostrarla
+        File old = new File(c.getCacheDir(), "tiles_v3");
+        if (!dir.exists() && old.exists()) old.renameTo(dir);
         dir.mkdirs();
         deleteOld(new File(c.getCacheDir(), "tiles"));
         deleteOld(new File(c.getCacheDir(), "tiles_v2"));
@@ -86,7 +90,8 @@ public class LiveMapView extends View {
         grid.setStrokeWidth(Math.max(1, s));
         text.setColor(Main.LIGHT ? 0x99000000 : 0x99FFFFFF);
         text.setTextSize(10 * s);
-        setLayerType(LAYER_TYPE_SOFTWARE, null);
+        // Android 4.3+ recorta con el chip gráfico; solo los equipos más viejos dibujan por software
+        if (android.os.Build.VERSION.SDK_INT < 18) setLayerType(LAYER_TYPE_SOFTWARE, null);
         Net.init(c);
         String custom = c.getSharedPreferences("launcher", 0).getString("map_url", "").trim();
         URLS[0] = custom;
@@ -161,12 +166,59 @@ public class LiveMapView extends View {
     }
 
     public void setPosition(double la, double lo, float br, float speedKmh) {
-        lat = la;
-        lon = lo;
-        if (!Float.isNaN(br)) bearing = br;
+        long now = android.os.SystemClock.uptimeMillis();
+        if (Double.isNaN(lat)) {
+            lat = la; lon = lo; fromLat = la; fromLon = lo;
+            animStart = 0;
+        } else {
+            // movimiento suave: se desliza desde donde se ve ahora hasta la nueva lectura del GPS
+            double[] cur = shownPos(now);
+            fromLat = cur[0]; fromLon = cur[1];
+            lat = la; lon = lo;
+            animStart = now;
+            animDur = Math.max(250, Math.min(1200, now - lastFixAt));
+        }
+        lastFixAt = now;
+        if (!Float.isNaN(br)) {
+            fromBearing = Float.isNaN(bearing) ? br : shownBearing(now);
+            bearing = br;
+        }
+        if (userZoom && now - userZoomAt > 30000) userZoom = false;   // a los 30 s vuelve al zoom automático
         if (!userZoom) zoom = speedKmh > 70 ? 15 : speedKmh > 35 ? 16 : 17;
         trimDisk();
         invalidate();
+    }
+
+    private double fromLat = Double.NaN, fromLon = Double.NaN;
+    private float fromBearing = Float.NaN;
+    private long animStart, animDur = 1000, lastFixAt, userZoomAt;
+    private float anchorX = 0.5f, anchorY = 0.42f;
+    private boolean headingUp;
+
+    /** Punto de la vista (0–1) donde se dibuja el auto. */
+    public void setAnchor(float ax, float ay) { anchorX = ax; anchorY = ay; invalidate(); }
+
+    public void setHeadingUp(boolean on) { headingUp = on; invalidate(); }
+    public boolean isHeadingUp() { return headingUp; }
+    public boolean isAutoZoom() { return !userZoom; }
+
+    private float animT(long now) {
+        if (animStart == 0) return 1f;
+        float t = (now - animStart) / (float) animDur;
+        return t >= 1f ? 1f : t;
+    }
+
+    private double[] shownPos(long now) {
+        float t = animT(now);
+        if (t >= 1f || Double.isNaN(fromLat)) return new double[]{lat, lon};
+        return new double[]{fromLat + (lat - fromLat) * t, fromLon + (lon - fromLon) * t};
+    }
+
+    private float shownBearing(long now) {
+        if (Float.isNaN(bearing)) return 0;
+        if (Float.isNaN(fromBearing)) return bearing;
+        float d = ((bearing - fromBearing + 540f) % 360f) - 180f;   // giro por el lado más corto
+        return fromBearing + d * animT(now);
     }
 
     private boolean userZoom;
@@ -174,6 +226,7 @@ public class LiveMapView extends View {
     /** Toque: cambia el nivel de zoom (14→17). */
     public void cycleZoom() {
         userZoom = true;
+        userZoomAt = android.os.SystemClock.uptimeMillis();
         zoom = zoom >= 17 ? 14 : zoom + 1;
         invalidate();
     }
@@ -181,22 +234,34 @@ public class LiveMapView extends View {
     @Override
     protected void onDraw(Canvas c) {
         float w = getWidth(), h = getHeight();
-        clip.reset();
-        clip.addRoundRect(new RectF(0, 0, w, h), radius, radius, Path.Direction.CW);
         c.save();
-        c.clipPath(clip);
+        if (radius > 0) {
+            clip.reset();
+            clip.addRoundRect(new RectF(0, 0, w, h), radius, radius, Path.Direction.CW);
+            c.clipPath(clip);
+        }
         c.drawColor(Main.LIGHT ? 0xFFE8EBF0 : 0xFF15171C);
 
         if (!Double.isNaN(lat)) {
             if (zoom > MAXZ[provider]) zoom = MAXZ[provider];
+            long now = android.os.SystemClock.uptimeMillis();
+            double[] pos = shownPos(now);
+            float shownBr = shownBearing(now);
+            boolean animating = animT(now) < 1f;
         int n = 1 << zoom;
-            double fx = (lon + 180.0) / 360.0 * n;
-            double latR = Math.toRadians(lat);
+            double fx = (pos[1] + 180.0) / 360.0 * n;
+            double latR = Math.toRadians(pos[0]);
             double fy = (1.0 - Math.log(Math.tan(latR) + 1.0 / Math.cos(latR)) / Math.PI) / 2.0 * n;
             float ts = 256 * s;                                    // tamaño de tesela en pantalla
-            float cx = w / 2f, cy = h * 0.42f;                     // la posición queda arriba del panel inferior
-            int tx0 = (int) Math.floor(fx - cx / ts) - 1, tx1 = (int) Math.floor(fx + (w - cx) / ts) + 1;
-            int ty0 = (int) Math.floor(fy - cy / ts) - 1, ty1 = (int) Math.floor(fy + (h - cy) / ts) + 1;
+            float cx = w * anchorX, cy = h * anchorY;              // dónde queda el auto en la vista
+            boolean rotate = headingUp && !Float.isNaN(bearing);
+            // al girar el mapa, se cubre el círculo que encierra toda la vista
+            float rx = rotate ? (float) Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy)) : 0;
+            float left0 = rotate ? rx : cx, right0 = rotate ? rx : w - cx, top0 = rotate ? rx : cy, bot0 = rotate ? rx : h - cy;
+            int tx0 = (int) Math.floor(fx - left0 / ts) - 1, tx1 = (int) Math.floor(fx + right0 / ts) + 1;
+            int ty0 = (int) Math.floor(fy - top0 / ts) - 1, ty1 = (int) Math.floor(fy + bot0 / ts) + 1;
+            c.save();
+            if (rotate) c.rotate(-shownBr, cx, cy);
             Rect dst = new Rect();
             for (int tx = tx0; tx <= tx1; tx++) {
                 for (int ty = ty0; ty <= ty1; ty++) {
@@ -217,18 +282,20 @@ public class LiveMapView extends View {
                     }
                 }
             }
-            drawMarker(c, cx, cy);
+            c.restore();
+            drawMarker(c, cx, cy, rotate ? 0 : shownBr);
+            if (animating) postInvalidateOnAnimation();
             String attr = provider == 5 ? "© Esri, HERE, Garmin, © OpenStreetMap" : provider == 4 ? "© OpenStreetMap, SRTM · © OpenTopoMap" : "© colaboradores de OpenStreetMap";
             c.drawText(attr, w - text.measureText(attr) - 10 * s, 14 * s, text);
         }
         c.restore();
     }
 
-    private void drawMarker(Canvas c, float x, float y) {
+    private void drawMarker(Canvas c, float x, float y, float br) {
         halo.setColor((Main.RED & 0x00FFFFFF) | 0x40000000);
         c.drawCircle(x, y, 22 * s, halo);
         c.save();
-        c.rotate(Float.isNaN(bearing) ? 0 : bearing, x, y);
+        c.rotate(br, x, y);
         tri.reset();
         tri.moveTo(x, y - 14 * s);
         tri.lineTo(x + 10 * s, y + 11 * s);
@@ -330,7 +397,7 @@ public class LiveMapView extends View {
 
     private long lastTrim;
 
-    /** Limita la caché en disco a ~60 MB. */
+    /** Limita el mapa guardado a ~300 MB (borra lo más antiguo hasta ~260 MB). */
     private void trimDisk() {
         long now = System.currentTimeMillis();
         if (now - lastTrim < 600000) return;
@@ -341,11 +408,11 @@ public class LiveMapView extends View {
                 if (fs == null) return;
                 long total = 0;
                 for (File f : fs) total += f.length();
-                if (total < 60L * 1024 * 1024) return;
+                if (total < 300L * 1024 * 1024) return;
                 java.util.Arrays.sort(fs, new java.util.Comparator<File>() {
                     public int compare(File a, File b) { long d = a.lastModified() - b.lastModified(); return d > 0 ? 1 : d < 0 ? -1 : 0; }
                 });
-                for (File f : fs) { if (total < 45L * 1024 * 1024) break; total -= f.length(); f.delete(); }
+                for (File f : fs) { if (total < 260L * 1024 * 1024) break; total -= f.length(); f.delete(); }
             }
         }).start();
     }
