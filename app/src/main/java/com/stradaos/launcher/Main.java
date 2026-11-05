@@ -595,12 +595,12 @@ public class Main extends Activity {
     }
 
     private void buildRail() {
-        timeTv = tv("", 34, RAIL_TX, true);
+        timeTv = tv("", 38, RAIL_TX, true);
         timeTv.setGravity(Gravity.CENTER_HORIZONTAL);
-        place(board, timeTv, 0, 16, RAIL_W, 42);
-        dateTv = tv("", 16, RAIL_MU, false);
+        place(board, timeTv, 0, 16, RAIL_W, 46);
+        dateTv = tv("", 19, RAIL_MU, false);
         dateTv.setGravity(Gravity.CENTER_HORIZONTAL);
-        place(board, dateTv, 0, 60, RAIL_W, 22);
+        place(board, dateTv, 0, 62, RAIL_W, 24);
 
         for (int i = 0; i < 5; i++) {
             final int idx = i;
@@ -644,20 +644,20 @@ public class Main extends Activity {
         LinearLayout pill = new LinearLayout(this);
         pill.setGravity(Gravity.CENTER_VERTICAL);
         pill.setBackground(glass(22));
-        pill.setPadding((int) (16 * s), (int) (10 * s), (int) (16 * s), (int) (10 * s));
+        pill.setPadding((int) (18 * s), (int) (11 * s), (int) (18 * s), (int) (11 * s));
         weatherBox = new LinearLayout(this);
         weatherBox.setGravity(Gravity.CENTER_VERTICAL);
-        weatherIc = icon("cloud", 22);
-        weatherBox.addView(weatherIc, new LinearLayout.LayoutParams((int) (22 * s), (int) (22 * s)));
-        weatherTv = tv("", 17, TEXT, true);
+        weatherIc = icon("cloud", 24);
+        weatherBox.addView(weatherIc, new LinearLayout.LayoutParams((int) (24 * s), (int) (24 * s)));
+        weatherTv = tv("", 21, TEXT, true);
         weatherTv.setPadding((int) (6 * s), 0, 0, 0);
         weatherBox.addView(weatherTv);
-        weatherCityTv = tv("", 17, MUTED, false);
+        weatherCityTv = tv("", 21, MUTED, false);
         weatherCityTv.setPadding((int) (6 * s), 0, (int) (14 * s), 0);
         weatherBox.addView(weatherCityTv);
         weatherBox.setVisibility(View.GONE);
         pill.addView(weatherBox);
-        greetTv = tv("", 17, TEXT, false);
+        greetTv = tv("", 21, TEXT, false);
         pill.addView(greetTv);
         placeWrap(board, pill, RAIL_W + 16, 12);
         lift(pill, 8);
@@ -688,9 +688,9 @@ public class Main extends Activity {
         // nombre y etiqueta en una fila: la etiqueta se ve completa y el nombre usa el espacio que sobra
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        carTv = tv(prefs.getString("car_name", "Mi vehículo"), 19, TEXT, true);
+        carTv = tv(prefs.getString("car_name", "Mi vehículo"), 21, TEXT, true);
         head.addView(carTv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView chip = tv(prefs.getString("car_tag", ""), 12, Color.WHITE, true);
+        TextView chip = tv(prefs.getString("car_tag", ""), 14, Color.WHITE, true);
         chipTv = chip;
         chip.setPadding((int) (8 * s), (int) (3 * s), (int) (8 * s), (int) (3 * s));
         chip.setBackground(round(0xFFD23C3C, 6));
@@ -698,7 +698,7 @@ public class Main extends Activity {
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, -2);
         clp.leftMargin = (int) (8 * s);
         head.addView(chip, clp);
-        place(card, head, 16, 12, 252, 26);
+        place(card, head, 16, 12, 252, 28);
 
         FrameLayout photoBox = new FrameLayout(this);
         GradientDrawable pb = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{INNER_A, INNER_B});
@@ -725,17 +725,17 @@ public class Main extends Activity {
         gpsDot = new View(this);
         gpsDot.setBackground(round(MUTED, 4));
         g.addView(gpsDot, new LinearLayout.LayoutParams((int) (8 * s), (int) (8 * s)));
-        gpsTv = tv("GPS", 13, MUTED, false);
+        gpsTv = tv("GPS", 15, MUTED, false);
         gpsTv.setPadding((int) (6 * s), 0, 0, 0);
         g.addView(gpsTv);
-        place(card, g, 150, 56, 118, 18);
+        place(card, g, 150, 54, 118, 20);
 
-        speedTv = tv("0", 58, TEXT, true);
+        speedTv = tv("0", 64, TEXT, true);
         speedTv.setGravity(Gravity.RIGHT);
-        place(card, speedTv, 150, 80, 118, 62);
-        TextView kmh = tv("km/h", 15, MUTED, false);
+        place(card, speedTv, 150, 76, 118, 68);
+        TextView kmh = tv("km/h", 17, MUTED, false);
         kmh.setGravity(Gravity.RIGHT);
-        place(card, kmh, 150, 142, 118, 20);
+        place(card, kmh, 150, 144, 118, 22);
         setGps(false, 0);
     }
 
@@ -749,7 +749,7 @@ public class Main extends Activity {
         card.setBackground(shadowShape);
         lift(card, 10);
 
-        playerArt = new MusicCard(this, s, asset("ic/music_note.png"), 76);
+        playerArt = new MusicCard(this, s, asset("ic/music_note.png"), 80);
         card.addView(playerArt, new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout src = new LinearLayout(this);
@@ -767,13 +767,13 @@ public class Main extends Activity {
         srcBox = src;
 
         int onText = LIGHT ? 0xFF1C1E22 : 0xFFF2F3F5;
-        trackTv = tv("Nada sonando", 22, onText, true);
-        place(card, trackTv, 16, mh - 132, 252, 28);
-        artistTv = tv("Radio, Bluetooth o USB", 16, LIGHT ? 0xFF5B6270 : 0xFFD6DDE2, false);
-        place(card, artistTv, 16, mh - 102, 180, 22);
-        timePosTv = tv("", 13, LIGHT ? 0xFF5B6270 : 0xFFD6DDE2, false);
+        trackTv = tv("Nada sonando", 26, onText, true);
+        place(card, trackTv, 16, mh - 144, 252, 32);
+        artistTv = tv("Radio, Bluetooth o USB", 19, LIGHT ? 0xFF5B6270 : 0xFFD6DDE2, false);
+        place(card, artistTv, 16, mh - 110, 172, 24);
+        timePosTv = tv("", 15, LIGHT ? 0xFF5B6270 : 0xFFD6DDE2, false);
         timePosTv.setGravity(Gravity.RIGHT);
-        place(card, timePosTv, 168, mh - 100, 100, 20);
+        place(card, timePosTv, 178, mh - 108, 90, 22);
 
         FrameLayout play = new FrameLayout(this);
         GradientDrawable pg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{lighten(RED, 0.18f), RED});
@@ -781,16 +781,16 @@ public class Main extends Activity {
         play.setBackground(pg);
         playIc = new ImageView(this);
         playIc.setColorFilter(onAccent());
-        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams((int) (30 * s), (int) (30 * s));
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams((int) (34 * s), (int) (34 * s));
         plp.gravity = Gravity.CENTER;
         play.addView(playIc, plp);
-        place(card, play, 16, mh - 60, 104, 46);
+        place(card, play, 16, mh - 66, 112, 54);
         lift(play, 4);
 
         View prev = flatIcon("skip_previous", onText);
         View next = flatIcon("skip_next", onText);
-        place(card, prev, 160, mh - 59, 46, 46);
-        place(card, next, 222, mh - 59, 46, 46);
+        place(card, prev, 150, mh - 66, 54, 54);
+        place(card, next, 214, mh - 66, 54, 54);
         prev.setOnClickListener(mediaClick(KeyEvent.KEYCODE_MEDIA_PREVIOUS));
         play.setOnClickListener(mediaClick(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
         next.setOnClickListener(mediaClick(KeyEvent.KEYCODE_MEDIA_NEXT));
@@ -808,7 +808,7 @@ public class Main extends Activity {
         ImageView iv = new ImageView(this);
         iv.setImageBitmap(asset("ic/" + name + ".png"));
         iv.setColorFilter(color);
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams((int) (30 * s), (int) (30 * s));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams((int) (36 * s), (int) (36 * s));
         lp.gravity = Gravity.CENTER;
         f.addView(iv, lp);
         return f;
@@ -834,13 +834,13 @@ public class Main extends Activity {
         tag.setGravity(Gravity.CENTER_VERTICAL);
         tag.setBackground(glass(14));
         tag.setPadding((int) (12 * s), (int) (8 * s), (int) (14 * s), (int) (8 * s));
-        ImageView loc = icon("my_location", 17);
+        ImageView loc = icon("my_location", 19);
         loc.setColorFilter(RED);
-        tag.addView(loc, new LinearLayout.LayoutParams((int) (17 * s), (int) (17 * s)));
-        mapTagTv = tv("Buscando GPS…", 15, TEXT, true);
+        tag.addView(loc, new LinearLayout.LayoutParams((int) (19 * s), (int) (19 * s)));
+        mapTagTv = tv("Buscando GPS…", 17, TEXT, true);
         mapTagTv.setPadding((int) (8 * s), 0, 0, 0);
         tag.addView(mapTagTv);
-        placeWrap(board, tag, RAIL_W + 16, 540);
+        placeWrap(board, tag, RAIL_W + 16, 546);
         lift(tag, 8);
 
         // brújula: rumbo arriba ↔ norte arriba
@@ -856,7 +856,7 @@ public class Main extends Activity {
         FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(-2, -2);
         tlp.gravity = Gravity.CENTER;
         comp.addView(headingTv, tlp);
-        place(board, comp, 644, 412, 60, 60);
+        place(board, comp, 644, 460, 60, 60);
         lift(comp, 8);
         comp.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -881,7 +881,7 @@ public class Main extends Activity {
         TextView gt = tv("Navegar", 17, onAccent(), true);
         gt.setPadding((int) (8 * s), 0, 0, 0);
         go.addView(gt);
-        place(board, go, 584, 484, 120, 56);
+        place(board, go, 584, 532, 120, 56);
         lift(go, 8);
         go.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { openNavigation(); }
