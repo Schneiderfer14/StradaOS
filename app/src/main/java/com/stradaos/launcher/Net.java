@@ -113,19 +113,26 @@ public class Net {
         private Socket on(Socket s) { return on(s, null); }
         private Socket on(Socket s, String host) {
             if (s instanceof SSLSocket) {
-                try { // todos los cifrados que tenga el equipo (Android 4.x trae pocos activados)
-                    ((SSLSocket) s).setEnabledCipherSuites(((SSLSocket) s).getSupportedCipherSuites());
-                } catch (Throwable ignored) { }
+                // Solo Android 4.x necesita ampliar cifrados y protocolos. En Android 5+ los valores de fábrica
+                // ya traen TLS 1.2, y "todos los soportados" incluye TLS_FALLBACK_SCSV: el servidor lo toma como
+                // una conexión degradada y la corta («Connection closed by peer»), así fallaban todos los mapas.
+                if (android.os.Build.VERSION.SDK_INT < 21) {
+                    try { // todos los cifrados que tenga el equipo (Android 4.x trae pocos activados), sin las señales SCSV
+                        java.util.ArrayList<String> cs = new java.util.ArrayList<String>();
+                        for (String c : ((SSLSocket) s).getSupportedCipherSuites()) if (!c.contains("SCSV")) cs.add(c);
+                        ((SSLSocket) s).setEnabledCipherSuites(cs.toArray(new String[0]));
+                    } catch (Throwable ignored) { }
+                    try {
+                        String[] sup = ((SSLSocket) s).getSupportedProtocols();
+                        java.util.ArrayList<String> want = new java.util.ArrayList<String>();
+                        for (String p : sup) if (p.equals("TLSv1.2") || p.equals("TLSv1.3") || p.equals("TLSv1.1")) want.add(p);
+                        if (!want.isEmpty()) ((SSLSocket) s).setEnabledProtocols(want.toArray(new String[0]));
+                    } catch (Throwable ignored) { }
+                }
                 if (host != null) {
                     try { s.getClass().getMethod("setHostname", String.class).invoke(s, host); } catch (Throwable ignored) { }   // SNI
                     try { s.getClass().getMethod("setUseSessionTickets", boolean.class).invoke(s, true); } catch (Throwable ignored) { }
                 }
-                try {
-                    String[] sup = ((SSLSocket) s).getSupportedProtocols();
-                    java.util.ArrayList<String> want = new java.util.ArrayList<String>();
-                    for (String p : sup) if (p.equals("TLSv1.2") || p.equals("TLSv1.3") || p.equals("TLSv1.1")) want.add(p);
-                    if (!want.isEmpty()) ((SSLSocket) s).setEnabledProtocols(want.toArray(new String[0]));
-                } catch (Throwable ignored) { }
             }
             return s;
         }
