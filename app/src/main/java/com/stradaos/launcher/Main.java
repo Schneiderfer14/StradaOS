@@ -533,12 +533,12 @@ public class Main extends Activity {
         FrameLayout.LayoutParams rlp = new FrameLayout.LayoutParams((int) ((W - 1024 * s) / 2 + RAIL_W * s), ViewGroup.LayoutParams.MATCH_PARENT);
         rlp.gravity = Gravity.LEFT;
         root.addView(railBg, rlp);
-        // borde nítido de la columna sobre el mapa (en pantallas TFT una sombra difusa se ve borrosa).
-        // Sin elevación a propósito: los ajustes y el cajón de apps se agregan después a root y tienen que
-        // quedar por encima de la pantalla de inicio.
+        // sombra de la columna sobre el mapa (le da profundidad). Sin elevación a propósito: los ajustes y el
+        // cajón de apps se agregan después a root y tienen que quedar por encima de la pantalla de inicio.
         View railShadow = new View(this);
-        railShadow.setBackgroundColor(LIGHT ? 0xFF262B33 : 0x2EFFFFFF);
-        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(Math.max(2, (int) (3 * s)), ViewGroup.LayoutParams.MATCH_PARENT);
+        railShadow.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{LIGHT ? 0x61000000 : 0x99000000, 0x00000000}));
+        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams((int) (20 * s), ViewGroup.LayoutParams.MATCH_PARENT);
         slp.gravity = Gravity.LEFT;
         slp.leftMargin = rlp.width;
         root.addView(railShadow, slp);
@@ -568,7 +568,7 @@ public class Main extends Activity {
     private GradientDrawable glass(float r) {
         GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{CARD_TOP, CARD_BOT});
         d.setCornerRadius(r * s);
-        d.setStroke(Math.max(2, (int) (1.5f * s)), CARD_LINE);
+        d.setStroke(Math.max(1, (int) s), CARD_LINE);
         return d;
     }
 
@@ -666,7 +666,7 @@ public class Main extends Activity {
         greetTv = tv("", 21, TEXT, false);
         pill.addView(greetTv);
         placeWrap(board, pill, RAIL_W + 16, 12);
-        lift(pill, 8);
+        lift(pill, 10);
         pill.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { openSettings(); }
         });
@@ -679,7 +679,7 @@ public class Main extends Activity {
         glp.gravity = Gravity.CENTER;
         gear.addView(icon("settings", 22), glp);
         place(board, gear, 964, 12, 44, 44);
-        lift(gear, 8);
+        lift(gear, 10);
         gear.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { openSettings(); }
         });
@@ -689,7 +689,7 @@ public class Main extends Activity {
         FrameLayout card = new FrameLayout(this);
         card.setBackground(glass(22));
         place(board, card, CARD_X, 64, CARD_W, 176);
-        lift(card, 10);
+        lift(card, 14);
 
         // nombre y etiqueta en una fila: la etiqueta se ve completa y el nombre usa el espacio que sobra
         LinearLayout head = new LinearLayout(this);
@@ -757,7 +757,7 @@ public class Main extends Activity {
         shadowShape.setColor(MUSIC_B);
         shadowShape.setCornerRadius(22 * s);
         card.setBackground(shadowShape);
-        lift(card, 10);
+        lift(card, 14);
 
         playerArt = new MusicCard(this, s, asset("ic/music_note.png"), 0);   // la barra la dibuja SeekLine
         card.addView(playerArt, new FrameLayout.LayoutParams(-1, -1));
@@ -766,7 +766,7 @@ public class Main extends Activity {
         GradientDrawable eg = new GradientDrawable();
         eg.setColor(0);
         eg.setCornerRadius(22 * s);
-        eg.setStroke(Math.max(2, (int) (1.5f * s)), CARD_LINE);
+        eg.setStroke(Math.max(1, (int) s), CARD_LINE);
         edge.setBackground(eg);
         card.addView(edge, new FrameLayout.LayoutParams(-1, -1));
 
@@ -884,7 +884,7 @@ public class Main extends Activity {
         mapTagTv.setPadding((int) (8 * s), 0, 0, 0);
         tag.addView(mapTagTv);
         placeWrap(board, tag, RAIL_W + 16, 546);
-        lift(tag, 8);
+        lift(tag, 10);
 
         // brújula: rumbo arriba ↔ norte arriba
         FrameLayout comp = new FrameLayout(this);
@@ -900,7 +900,7 @@ public class Main extends Activity {
         tlp.gravity = Gravity.CENTER;
         comp.addView(headingTv, tlp);
         place(board, comp, FREE_R - 68, 460, 60, 60);
-        lift(comp, 8);
+        lift(comp, 10);
         comp.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 boolean on = !liveMap.isHeadingUp();
@@ -962,7 +962,24 @@ public class Main extends Activity {
                 if (l != null && (best == null || l.getTime() > best.getTime())) best = l;
             } catch (Throwable ignored) { }
         }
-        if (best != null) feedMap(best);
+        // El radio pierde la ubicación del sistema al apagarse: se usa la última que guardó la app
+        // (y la primera vez, el centro de Cuenca) para mostrar el mapa al instante mientras el GPS busca.
+        if (best == null) {
+            best = new Location("guardada");
+            best.setLatitude(prefs.getFloat("last_lat", -2.8990f));
+            best.setLongitude(prefs.getFloat("last_lon", -79.0050f));
+        }
+        feedMap(best);
+    }
+
+    private long lastSaveAt;
+
+    /** Guarda la última posición real del GPS (cada 20 s como mucho) para el próximo arranque. */
+    private void saveLastPos(Location l) {
+        long now = SystemClock.elapsedRealtime();
+        if (lastSaveAt != 0 && now - lastSaveAt < 20000) return;
+        lastSaveAt = now;
+        prefs.edit().putFloat("last_lat", (float) l.getLatitude()).putFloat("last_lon", (float) l.getLongitude()).apply();
     }
 
     private float lastKmh;
@@ -973,6 +990,7 @@ public class Main extends Activity {
         float kmh = l.hasSpeed() ? l.getSpeed() * 3.6f : 0;
         lastKmh = kmh;
         liveMap.setPosition(l.getLatitude(), l.getLongitude(), l.hasBearing() && kmh > 4 ? l.getBearing() : Float.NaN, kmh);
+        liveMap.setStale(lastFix == 0);   // flecha gris mientras no haya GPS en vivo
         liveMap.setVisibility(View.VISIBLE);
         updateMapTag();
     }
@@ -982,8 +1000,9 @@ public class Main extends Activity {
         boolean live = lastFix > 0;
         String zoom = liveMap != null && liveMap.isAutoZoom() ? "zoom automático" : "zoom manual";
         if (liveMap == null || !liveMap.hasFix()) mapTagTv.setText("Buscando GPS…");
-        else if (liveMap.offline()) mapTagTv.setText(live ? "Sin internet · mapa guardado" : "Última posición · sin internet");
-        else mapTagTv.setText(live ? Math.round(lastKmh < 2 ? 0 : lastKmh) + " km/h · " + zoom : "Última posición conocida");
+        else if (!live) mapTagTv.setText("Última ubicación · buscando GPS");
+        else if (liveMap.offline()) mapTagTv.setText("Sin internet · mapa guardado");
+        else mapTagTv.setText(Math.round(lastKmh < 2 ? 0 : lastKmh) + " km/h · " + zoom);
     }
 
     // ───────────────────────── helpers de UI ─────────────────────────
@@ -1096,6 +1115,7 @@ public class Main extends Activity {
             if (wasWrong) updateClock();
             setGps(true, l.hasSpeed() ? l.getSpeed() * 3.6f : 0);
             feedMap(l);
+            saveLastPos(l);
         }
         public void onStatusChanged(String p, int st, Bundle e) { }
         public void onProviderEnabled(String p) { }
@@ -1130,6 +1150,7 @@ public class Main extends Activity {
         speedTv.setText(ok ? String.valueOf(Math.round(kmh < 2 ? 0 : kmh)) : "--");
         gpsTv.setText(ok ? "GPS" : "Buscando GPS");
         gpsDot.setBackground(round(ok ? 0xFF3DDC84 : MUTED, 6));
+        if (liveMap != null) liveMap.setStale(!ok);
         updateMapTag();
     }
 
@@ -1922,14 +1943,14 @@ public class Main extends Activity {
         if (LIGHT) {
             BG = 0xFFE9ECF1; CARD = 0xFFFFFFFF; INNER = 0xFFF1F3F7; BTN = 0xFFE2E6EC; DOCK = 0xFFDDE1E8;
             TEXT = 0xFF0A0C10; MUTED = 0xFF4A515D; SOFT = 0xFF2E3440; CIRCLE = 0xFFFFFFFF; ICON = 0xFF15181E;
-            CARD_TOP = 0xFFFFFFFF; CARD_BOT = 0xFFFFFFFF; CARD_LINE = 0x61000000; INNER_A = 0xFFD9DEE5; INNER_B = 0xFFD9DEE5;
+            CARD_TOP = 0xFFFFFFFF; CARD_BOT = 0xFFEEF1F5; CARD_LINE = 0x29000000; INNER_A = 0xFFE1E5EA; INNER_B = 0xFFCED4DC;
             // columna en gris grafito
             RAIL_A = 0xFF474E59; RAIL_B = 0xFF474E59; RAIL_TX = 0xFFFFFFFF; RAIL_MU = 0xFFD9DEE5; PLATE = 0x1AFFFFFF;
             MUSIC_A = 0xFF5E86BA; MUSIC_B = 0xFF22406A; FADE = 0xFFFFFFFF;
         } else {
             BG = 0xFF15171C; CARD = 0xFF1E2128; INNER = 0xFF262A33; BTN = 0xFF2A2E37; DOCK = 0xFF0D0E11;
             TEXT = 0xFFFFFFFF; MUTED = 0xFFB9C0CA; SOFT = 0xFFD5D8DE; CIRCLE = 0xFF23262E; ICON = 0xFFFFFFFF;
-            CARD_TOP = 0xF7181B20; CARD_BOT = 0xF7181B20; CARD_LINE = 0x42FFFFFF; INNER_A = 0xFF262A31; INNER_B = 0xFF262A31;
+            CARD_TOP = 0xF8262A32; CARD_BOT = 0xF8121418; CARD_LINE = 0x21FFFFFF; INNER_A = 0xFF2E323A; INNER_B = 0xFF1F2228;
             RAIL_A = 0xFF07080A; RAIL_B = 0xFF07080A; RAIL_TX = 0xFFFFFFFF; RAIL_MU = 0xFFC9CED6; PLATE = 0x12FFFFFF;
             MUSIC_A = 0xFF2E8299; MUSIC_B = 0xFF0B1013; FADE = 0xF506090C;
         }
