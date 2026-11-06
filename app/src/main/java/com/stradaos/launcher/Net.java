@@ -97,6 +97,9 @@ public class Net {
     /** Hora UTC de una lectura del GPS: queda como referencia si el reloj del equipo está mal. */
     static void gpsTime(long t) {
         if (t <= 0) return;
+        // Receptores con el error del «rollover» de semanas GPS (abril 2019) entregan la fecha 1024 semanas
+        // atrás (p. ej. 22 mar 2007 en lugar de 5 nov 2026): se corrige sumando ciclos de 1024 semanas.
+        while (t < 1546300800000L) t += 1024L * 7 * 24 * 3600 * 1000;   // antes de 2019-01-01
         gpsOffset = t - System.currentTimeMillis();
         gpsKnown = true;
     }
