@@ -87,10 +87,9 @@ public class LiveMapView extends View {
         deleteOld(new File(c.getCacheDir(), "tiles"));
         deleteOld(new File(c.getCacheDir(), "tiles_v2"));
         bright = c.getSharedPreferences("launcher", 0).getInt("map_bright", 1);
-        // Contraste para pantallas TFT/LCD (0 normal, 1 alto, 2 máximo). Solo un filtro al dibujar:
+        // Contraste para pantallas TFT/LCD (0 suave, 1 medio, 2 fuerte). Solo un filtro al dibujar:
         // las imágenes del mapa guardado no se tocan.
-        int con = c.getSharedPreferences("launcher", 0).getInt("map_contrast", 1);
-        if (con > 0) tile.setColorFilter(contrast(con));
+        tile.setColorFilter(contrast(c.getSharedPreferences("launcher", 0).getInt("map_contrast", 1)));
         grid.setColor(Main.LIGHT ? 0xFFD5D9E0 : 0xFF22252C);
         grid.setStrokeWidth(Math.max(1, s));
         text.setColor(Main.LIGHT ? 0x99000000 : 0x99FFFFFF);
@@ -112,10 +111,10 @@ public class LiveMapView extends View {
     static android.graphics.ColorMatrixColorFilter contrast(int level) {
         float k, off;
         if (Main.LIGHT) {
-            k = level >= 2 ? 2.4f : 1.9f;
+            k = level <= 0 ? 1.5f : level == 1 ? 1.9f : 2.4f;
             off = 255f * (1f - k);
         } else {
-            k = level >= 2 ? 1.9f : 1.5f;
+            k = level <= 0 ? 1.3f : level == 1 ? 1.5f : 1.9f;
             off = 30f * (1f - k);
         }
         return new android.graphics.ColorMatrixColorFilter(new float[]{
@@ -313,7 +312,8 @@ public class LiveMapView extends View {
             drawMarker(c, cx, cy, rotate ? 0 : shownBr);
             if (animating) postInvalidateOnAnimation();
             String attr = pack != null ? "© colaboradores de OpenStreetMap" : provider == 5 ? "© Esri, HERE, Garmin, © OpenStreetMap" : provider == 4 ? "© OpenStreetMap, SRTM · © OpenTopoMap" : "© colaboradores de OpenStreetMap";
-            c.drawText(attr, w - text.measureText(attr) - 10 * s, 14 * s, text);
+            // abajo a la izquierda, debajo del recuadro de la calle (no junto al engranaje)
+            c.drawText(attr, (w - 1024 * s) / 2f + (Main.RAIL_W + 18) * s, (h - 600 * s) / 2f + 597 * s, text);
         }
         c.restore();
     }
