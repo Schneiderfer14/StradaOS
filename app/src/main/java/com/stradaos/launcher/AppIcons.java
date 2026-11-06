@@ -86,25 +86,40 @@ public final class AppIcons {
         p.setStyle(Paint.Style.FILL);
     }
 
+    /** Navegador al estilo Chrome: aro de tres colores con centro azul, sobre el cuadrado blanco redondeado. */
     private static void browser(Canvas c, Paint p, RectF sq) {
         vgrad(p, 0xFFFFFFFF, 0xFFE4E5E9);
         c.drawRoundRect(sq, 114, 114, p);
-        vgrad(p, 0xFF8A45C9, 0xFF5B2A9E);
-        c.drawCircle(256, 256, 206, p);
         p.setShader(null);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(22);
-        p.setColor(0xD9FFFFFF);
-        p.setPathEffect(new DashPathEffect(new float[]{3, 15}, 0));
-        c.drawCircle(256, 256, 172, p);
-        p.setPathEffect(null);
-        p.setStyle(Paint.Style.FILL);
-        tri(c, p, 0xFFFF4B3E, 256, 256, 384, 128, 276, 276);
-        tri(c, p, 0xFFD9322A, 256, 256, 384, 128, 236, 236);
-        tri(c, p, 0xFFFFFFFF, 256, 256, 128, 384, 236, 236);
-        tri(c, p, 0xFFD6D8DE, 256, 256, 128, 384, 276, 276);
-        p.setColor(0xFF5B2A9E);
-        c.drawCircle(256, 256, 10, p);
+        final float C = 256, R = 200, ri = R * 0.5f;
+        int[] cols = {0xFFF4B400, 0xFF0F9D58, 0xFFDB4437};
+        c.save();
+        Path disk = new Path();
+        disk.addCircle(C, C, R, Path.Direction.CW);
+        c.clipPath(disk);
+        for (int k = 0; k < 3; k++) {
+            double a0 = Math.toRadians(-30 + 120 * k), a1 = Math.toRadians(90 + 120 * k), am = a0 + Math.PI * 0.6;
+            float p0x = C + ri * (float) Math.cos(a0), p0y = C + ri * (float) Math.sin(a0);
+            float p1x = C + ri * (float) Math.cos(a1), p1y = C + ri * (float) Math.sin(a1);
+            float d0x = (float) Math.cos(a0 + Math.PI / 2), d0y = (float) Math.sin(a0 + Math.PI / 2);
+            float d1x = (float) Math.cos(a1 + Math.PI / 2), d1y = (float) Math.sin(a1 + Math.PI / 2);
+            Path seg = new Path();
+            seg.moveTo(C, C);
+            seg.lineTo(p0x, p0y);
+            seg.lineTo(p0x + 3 * R * d0x, p0y + 3 * R * d0y);
+            seg.lineTo(C + 4 * R * (float) Math.cos(am), C + 4 * R * (float) Math.sin(am));
+            seg.lineTo(p1x + 3 * R * d1x, p1y + 3 * R * d1y);
+            seg.lineTo(p1x, p1y);
+            seg.close();
+            p.setColor(cols[k]);
+            c.drawPath(seg, p);
+        }
+        c.restore();
+        p.setColor(0xFFFFFFFF);
+        c.drawCircle(C, C, ri, p);
+        p.setShader(new LinearGradient(0, C - 80, 0, C + 80, 0xFF5A9BF8, 0xFF1A73E8, Shader.TileMode.CLAMP));
+        c.drawCircle(C, C, R * 0.4f, p);
+        p.setShader(null);
     }
 
     private static void tri(Canvas c, Paint p, int color, float x1, float y1, float x2, float y2, float x3, float y3) {
