@@ -205,6 +205,7 @@ public class Main extends Activity {
             public void onBtState(NowPlaying.Track t) { showTrack(t); }
         });
         clwBt = BtBridge.available(this);
+        BtAvrcp.init(this);
         bt.onPhoneStarted = new Runnable() { public void run() { onPhoneStartedBt(); } };
         bt.onLost = new Runnable() { public void run() { btRouted = false; } };
         h.postDelayed(btTicker, 3000);
@@ -556,7 +557,7 @@ public class Main extends Activity {
 
     static final float RAIL_W = 120;
     // zona del mapa que queda libre entre la columna y los widgets (en px de diseño)
-    static final float FREE_L = RAIL_W, FREE_R = 712;
+    static final float FREE_L = RAIL_W, FREE_R = 684;
 
     /** Recuadro flotante con profundidad: degradado, borde fino y sombra (Android 5+). */
     private GradientDrawable glass(float r) {
@@ -682,7 +683,7 @@ public class Main extends Activity {
     private void buildVehicle() {
         FrameLayout card = new FrameLayout(this);
         card.setBackground(glass(22));
-        place(board, card, 724, 64, 284, 176);
+        place(board, card, 696, 64, 312, 176);
         lift(card, 10);
 
         // nombre y etiqueta en una fila: la etiqueta se ve completa y el nombre usa el espacio que sobra
@@ -698,13 +699,13 @@ public class Main extends Activity {
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, -2);
         clp.leftMargin = (int) (8 * s);
         head.addView(chip, clp);
-        place(card, head, 16, 12, 252, 28);
+        place(card, head, 16, 12, 280, 28);
 
         FrameLayout photoBox = new FrameLayout(this);
         GradientDrawable pb = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{INNER_A, INNER_B});
         pb.setCornerRadius(16 * s);
         photoBox.setBackground(pb);
-        place(card, photoBox, 14, 50, 132, 110);
+        place(card, photoBox, 14, 50, 146, 110);
         Bitmap photo = CarPhoto.load(this);
         if (photo == null) photo = CarDefault.load();
         ImageView car = new ImageView(this);
@@ -728,21 +729,21 @@ public class Main extends Activity {
         gpsTv = tv("GPS", 15, MUTED, false);
         gpsTv.setPadding((int) (6 * s), 0, 0, 0);
         g.addView(gpsTv);
-        place(card, g, 150, 54, 118, 20);
+        place(card, g, 164, 54, 132, 20);
 
         speedTv = tv("0", 64, TEXT, true);
         speedTv.setGravity(Gravity.RIGHT);
-        place(card, speedTv, 150, 76, 118, 68);
+        place(card, speedTv, 164, 76, 132, 68);
         TextView kmh = tv("km/h", 17, MUTED, false);
         kmh.setGravity(Gravity.RIGHT);
-        place(card, kmh, 150, 144, 118, 22);
+        place(card, kmh, 164, 144, 132, 22);
         setGps(false, 0);
     }
 
     private void buildMusic() {
         final float mh = 336;
         FrameLayout card = new FrameLayout(this);
-        place(board, card, 724, 252, 284, mh);
+        place(board, card, 696, 252, 312, mh);
         GradientDrawable shadowShape = new GradientDrawable();
         shadowShape.setColor(MUSIC_B);
         shadowShape.setCornerRadius(22 * s);
@@ -768,12 +769,12 @@ public class Main extends Activity {
 
         int onText = LIGHT ? 0xFF1C1E22 : 0xFFF2F3F5;
         trackTv = tv("Nada sonando", 26, onText, true);
-        place(card, trackTv, 16, mh - 144, 252, 32);
+        place(card, trackTv, 16, mh - 144, 280, 32);
         artistTv = tv("Radio, Bluetooth o USB", 19, LIGHT ? 0xFF5B6270 : 0xFFD6DDE2, false);
-        place(card, artistTv, 16, mh - 110, 172, 24);
+        place(card, artistTv, 16, mh - 110, 192, 24);
         timePosTv = tv("", 15, LIGHT ? 0xFF5B6270 : 0xFFD6DDE2, false);
         timePosTv.setGravity(Gravity.RIGHT);
-        place(card, timePosTv, 178, mh - 108, 90, 22);
+        place(card, timePosTv, 206, mh - 108, 90, 22);
 
         FrameLayout play = new FrameLayout(this);
         GradientDrawable pg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{lighten(RED, 0.18f), RED});
@@ -789,8 +790,8 @@ public class Main extends Activity {
 
         View prev = flatIcon("skip_previous", onText);
         View next = flatIcon("skip_next", onText);
-        place(card, prev, 150, mh - 66, 54, 54);
-        place(card, next, 214, mh - 66, 54, 54);
+        place(card, prev, 178, mh - 66, 54, 54);
+        place(card, next, 242, mh - 66, 54, 54);
         prev.setOnClickListener(mediaClick(KeyEvent.KEYCODE_MEDIA_PREVIOUS));
         play.setOnClickListener(mediaClick(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
         next.setOnClickListener(mediaClick(KeyEvent.KEYCODE_MEDIA_NEXT));
@@ -856,7 +857,7 @@ public class Main extends Activity {
         FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(-2, -2);
         tlp.gravity = Gravity.CENTER;
         comp.addView(headingTv, tlp);
-        place(board, comp, 644, 460, 60, 60);
+        place(board, comp, 616, 460, 60, 60);
         lift(comp, 8);
         comp.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -881,7 +882,7 @@ public class Main extends Activity {
         TextView gt = tv("Navegar", 17, onAccent(), true);
         gt.setPadding((int) (8 * s), 0, 0, 0);
         go.addView(gt);
-        place(board, go, 584, 532, 120, 56);
+        place(board, go, 556, 532, 120, 56);
         lift(go, 8);
         go.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { openNavigation(); }
@@ -1031,7 +1032,7 @@ public class Main extends Activity {
 
     private void updateClock() {
         if (timeTv == null) return;
-        Date now = new Date();
+        Date now = new Date(Net.now());
         String fmt = prefs.getString("clock", "auto");
         boolean h24 = "24".equals(fmt) || ("auto".equals(fmt) && android.text.format.DateFormat.is24HourFormat(this));
         // columna angosta: hora sin a. m./p. m. y fecha corta («jue 5 nov»)
@@ -1048,6 +1049,9 @@ public class Main extends Activity {
     private final LocationListener gpsListener = new LocationListener() {
         public void onLocationChanged(Location l) {
             lastFix = SystemClock.elapsedRealtime();
+            boolean wasWrong = Net.clockSuspicious();
+            Net.gpsTime(l.getTime());   // hora real aunque el equipo haya arrancado en 2007
+            if (wasWrong) updateClock();
             setGps(true, l.hasSpeed() ? l.getSpeed() * 3.6f : 0);
             feedMap(l);
         }
@@ -1095,6 +1099,14 @@ public class Main extends Activity {
 
                 if (mediaWatcher != null && "ms".equals(curOrigin)) {
                     try { done = mediaWatcher.command(which); } catch (Throwable ignored) { }
+                }
+                // celular por Bluetooth: control remoto AVRCP del sistema (pantallas Autochips y similares)
+                if (!done && (curOrigin == null || "bt".equals(curOrigin)) && BtAvrcp.connected()) {
+                    boolean on = playingState != null ? playingState
+                            : ((AudioManager) getSystemService(AUDIO_SERVICE)).isMusicActive();
+                    int key = which == 1 ? BtAvrcp.KEY_NEXT : which == -1 ? BtAvrcp.KEY_PREV : (on ? BtAvrcp.KEY_PAUSE : BtAvrcp.KEY_PLAY);
+                    done = BtAvrcp.send(key);
+                    if (done && which == 0) { playingState = !on; renderTrack(); }
                 }
                 if (!done && !sendBtCommand(code)) sendMediaKey(code);
                 h.postDelayed(new Runnable() { public void run() { updatePlayIcon(); } }, 600);
@@ -1281,6 +1293,7 @@ public class Main extends Activity {
                     + (NotifArt.lastArt != null ? "sí" : "no") + ", textos " + NotifArt.lastTexts)
                 + "\nOpen Headunit corriendo: " + (processRunning(PKG_HUR) ? "sí" : "no")
                 + "\nApp Bluetooth conectada: " + (bt != null && bt.isConnected() ? "sí" : "no")
+                + "\nControl remoto AVRCP: " + (BtAvrcp.connected() ? "celular conectado" : "sin celular")
                 + "\nAudio Bluetooth automático: " + (clwBt ? (btAutoOn() ? "activado" : "desactivado") : "no aplica (otra marca)")
                 + (clwBt ? "" : "\nApp de música Bluetooth: " + (btMusicApp() != null ? btMusicApp().getPackageName() : "no encontrada")
                     + " · abrir al conectar: " + (prefs.getBoolean("bt_open_connect", false) ? "sí" : "no"))
