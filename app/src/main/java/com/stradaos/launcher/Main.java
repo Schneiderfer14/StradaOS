@@ -1777,18 +1777,16 @@ public class Main extends Activity {
         RED_DARK = 0xFF000000 | ((r * pct / 100 + br * (100 - pct) / 100) << 16) | ((g * pct / 100 + bgc * (100 - pct) / 100) << 8) | (b * pct / 100 + bb * (100 - pct) / 100);
     }
 
-    /** Usuario que actualiza desde una versión anterior: conserva su carro. Usuario nuevo: asistente. */
+    /** Sin asistente de bienvenida: los datos del usuario y del vehículo vienen puestos (se cambian en Ajustes).
+     *  Se aplican una sola vez; solo rellenan lo que esté vacío o con el valor genérico. */
     private void migrateOrSetup() {
-        if (prefs.getBoolean("setup_done", false)) return;
-        boolean upgrade = false;
-        try {
-            android.content.pm.PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
-            upgrade = pi.lastUpdateTime - pi.firstInstallTime > 60000;
-        } catch (Throwable ignored) { }
-        if (upgrade) {
-            prefs.edit().putBoolean("setup_done", true).apply();
-        } else {
-            h.postDelayed(new Runnable() { public void run() { wizard(); } }, 600);
+        if (!prefs.getBoolean("defaults_v1", false)) {
+            SharedPreferences.Editor e = prefs.edit();
+            if (prefs.getString("user_name", "").trim().length() == 0) e.putString("user_name", "Jimmy");
+            String car = prefs.getString("car_name", "").trim();
+            if (car.length() == 0 || car.equals("Mi vehículo")) e.putString("car_name", "Grand Vitara");
+            if (prefs.getString("car_tag", "").trim().length() == 0) e.putString("car_tag", "Sport 3p 4X4");
+            e.putBoolean("defaults_v1", true).putBoolean("setup_done", true).apply();
         }
     }
 
