@@ -211,6 +211,7 @@ public class Main extends Activity {
         BtAvrcp.init(this);
         FmRadio.register(this);
         FmRadio.listener = new FmRadio.Listener() { public void onRadioChanged() { radioChanged(); } };
+        h.post(radioTick);
         bt.onPhoneStarted = new Runnable() { public void run() { onPhoneStartedBt(); } };
         bt.onLost = new Runnable() { public void run() { btRouted = false; } };
         h.postDelayed(btTicker, 3000);
@@ -844,18 +845,33 @@ public class Main extends Activity {
     // ── radio FM del equipo ──
     private TextView radioFreqTv;
     private RadioDial radioDial;
-    private boolean radioSuppressed, wasRadio;
+    private boolean radioSuppressed, wasRadio, radioMuted;
     private AudioManager.OnAudioFocusChangeListener focusL;
 
-    /** El cuadro muestra la radio cuando suena y no la pausamos nosotros. */
-    private boolean showRadio() { return FmRadio.on && !radioSuppressed; }
+    /** El cuadro muestra la radio cuando suena (o está silenciada con el botón rojo) y no se cambió al celular. */
+    private boolean showRadio() { return (FmRadio.on || radioMuted) && !radioSuppressed; }
+
+    private boolean lastFmOn;
 
     private void radioChanged() {
+        // la radio volvió a encenderse (la abrió el usuario o se reactivó): se muestra
+        if (FmRadio.on && !lastFmOn) { radioSuppressed = false; radioMuted = false; }
+        lastFmOn = FmRadio.on;
         boolean r = showRadio();
         // la radio empezó a sonar mientras sonaba el celular: se pausa el celular (nunca suenan los dos)
-        if (r && !wasRadio) pausePhone();
+        if (r && !wasRadio && !radioMuted) pausePhone();
         wasRadio = r;
         renderTrack();
+    }
+
+    private final Runnable radioTick = new Runnable() { public void run() {
+        FmRadio.poll(Main.this);   // detecta la radio aunque no esté el acceso a notificaciones
+        h.postDelayed(this, 2000);
+    } };
+
+    /** true si hay un celular (o una app de música del radio) al que mandarle play. */
+    private boolean phoneAvailable() {
+        return BtAvrcp.connected() || (bt != null && bt.isConnected()) || "ms".equals(curOrigin);
     }
 
     private void pausePhone() {
@@ -867,44 +883,73 @@ public class Main extends Activity {
         }
     }
 
-    /** Pide el sonido para StradaOS (de forma temporal): la radio FM se pausa y vuelve sola si se suelta. */
-    private void takeFocus() {
+    /** Pide el sonido para StradaOS de forma temporal. La radio de este equipo, al perderlo así, se apaga y
+     *  queda marcada para encenderse sola en la misma emisora cuando se suelta (FmService.updateAudioFocus). */
+    private boolean takeFocus() {
         try {
             if (focusL == null) focusL = new AudioManager.OnAudioFocusChangeListener() {
                 public void onAudioFocusChange(int fc) {
-                    if (fc == AudioManager.AUDIOFOCUS_LOSS) {
-                        // otra app (por ejemplo la radio al abrirla) tomó el sonido: se pausa el celular
-                        BtBridge.log("otra app tomó el sonido");
-                        radioSuppressed = false;
-                        pausePhone();
-                        renderTrack();
-                    }
+                    // Solo se anota: la app Bluetooth del radio también pide el sonido al empezar una canción,
+                    // así que pausar el celular aquí lo callaba justo después de darle play.
+                    if (fc == AudioManager.AUDIOFOCUS_LOSS) BtBridge.log("otra app tomó el sonido");
                 }
             };
             AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
             int r = am.requestAudioFocus(focusL, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
             BtBridge.log("sonido pedido para StradaOS: " + (r == AudioManager.AUDIOFOCUS_REQUEST_GRANTED ? "concedido" : "negado"));
-        } catch (Throwable ignored) { }
+            return r == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        } catch (Throwable ignored) { return false; }
     }
 
     private void releaseFocus() {
         try { if (focusL != null) ((AudioManager) getSystemService(AUDIO_SERVICE)).abandonAudioFocus(focusL); } catch (Throwable ignored) { }
     }
 
-    /** Botón rojo en modo radio: pausa la radio y el cuadro vuelve al modo música. */
-    private void pauseRadio() {
-        takeFocus();
+    /** Calla la radio para pasar al celular (pidiéndole el sonido; si no se concede, con su botón de apagar). */
+    private void stopRadio() {
+        if (!radioMuted && !takeFocus()) FmRadio.turnOff();
+        radioMuted = false;
         radioSuppressed = true;
         wasRadio = false;
+    }
+
+    /** Botón rojo en modo radio: silencia la radio o la vuelve a encender en la misma emisora, sin abrir su app. */
+    private void toggleRadioMute() {
+        if (!radioMuted) {
+            if (takeFocus() || FmRadio.turnOff()) radioMuted = true;
+        } else {
+            radioMuted = false;
+            releaseFocus();
+            // si mientras tanto otra app se quedó con el sonido, la radio no vuelve sola: se abre su app
+            h.removeCallbacks(radioCheck);
+            h.postDelayed(radioCheck, 2500);
+        }
         renderTrack();
     }
+
+    /** Comprueba que la radio volvió a sonar; si no, abre su app (y regresa al inicio). */
+    private final Runnable radioCheck = new Runnable() { public void run() {
+        FmRadio.poll(Main.this);
+        if (!FmRadio.on && !radioSuppressed && !radioMuted && FmRadio.launch(Main.this)) {
+            h.removeCallbacks(backHome);
+            h.postDelayed(backHome, 2500);
+        }
+    } };
+
+    /** Vuelve a la pantalla de inicio (después de abrir la radio para que empiece a sonar). */
+    private final Runnable backHome = new Runnable() { public void run() {
+        try {
+            Intent i = new Intent(Main.this, Main.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            startActivity(i);
+        } catch (Throwable ignored) { }
+    } };
 
     /** Etiqueta del cuadro: cambia de fuente en un toque (radio FM ⇄ celular). */
     private void switchSource() {
         if (showRadio()) {
-            takeFocus();                 // la radio se pausa
-            radioSuppressed = true;
-            wasRadio = false;
+            if (!phoneAvailable()) { toast("No hay ningún celular conectado por Bluetooth"); return; }
+            stopRadio();                 // la radio se calla
             if (BtAvrcp.connected()) {
                 BtAvrcp.send(BtAvrcp.KEY_PLAY);
                 playingState = true;
@@ -914,10 +959,11 @@ public class Main extends Activity {
         } else {
             pausePhone();
             radioSuppressed = false;
-            releaseFocus();              // la radio recupera el sonido y vuelve a sonar
-            h.postDelayed(new Runnable() { public void run() {
-                if (!FmRadio.on) FmRadio.launch(Main.this);   // si no volvió sola, se abre la app de radio
-            } }, 1500);
+            radioMuted = false;
+            releaseFocus();              // si la callamos nosotros, la radio vuelve sola en la misma emisora
+            // si no vuelve (estaba apagada), se abre su app y a los 2,5 s se regresa al inicio
+            h.removeCallbacks(radioCheck);
+            if (!FmRadio.on) h.postDelayed(radioCheck, 1500);
         }
         renderTrack();
     }
@@ -935,7 +981,7 @@ public class Main extends Activity {
         sourceTv.setText("RADIO FM");
         srcIc.setImageBitmap(asset("ic/radio.png"));
         srcBox.setVisibility(View.VISIBLE);
-        playIc.setImageBitmap(asset("ic/pause.png"));
+        playIc.setImageBitmap(asset(radioMuted ? "ic/play_arrow.png" : "ic/pause.png"));
     }
 
     /** true si la app que suena en el radio deja adelantar (el Bluetooth del celular no tiene esa orden). */
@@ -1286,21 +1332,13 @@ public class Main extends Activity {
             public void onClick(View v) {
                 int which = code == KeyEvent.KEYCODE_MEDIA_NEXT ? 1 : code == KeyEvent.KEYCODE_MEDIA_PREVIOUS ? -1 : 0;
                 boolean done = false;
-                // modo radio: el botón rojo pausa la radio y las flechas cambian de emisora
+                // Modo radio: el botón rojo silencia o reactiva la radio y las flechas cambian de emisora.
+                // Nunca cambia de fuente: eso solo lo hace la etiqueta RADIO FM / BLUETOOTH.
                 if (showRadio()) {
-                    if (which == 0) pauseRadio();
+                    if (which == 0) toggleRadioMute();
                     else if (which == 1) FmRadio.next(Main.this);
                     else FmRadio.prev(Main.this);
                     return;
-                }
-                // play del celular: antes se pide el sonido para que la radio FM se pause (no suenan los dos)
-                if (which == 0) {
-                    boolean on0 = playingState != null ? playingState
-                            : ((AudioManager) getSystemService(AUDIO_SERVICE)).isMusicActive();
-                    if (!on0) {
-                        takeFocus();
-                        if (FmRadio.on) radioSuppressed = true;
-                    }
                 }
 
                 if (mediaWatcher != null && "ms".equals(curOrigin)) {
@@ -1364,7 +1402,7 @@ public class Main extends Activity {
 
     private void updatePlayIcon() {
         if (playIc == null) return;
-        if (showRadio()) { playIc.setImageBitmap(asset("ic/pause.png")); return; }
+        if (showRadio()) { playIc.setImageBitmap(asset(radioMuted ? "ic/play_arrow.png" : "ic/pause.png")); return; }
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         boolean on = playingState != null ? playingState : am.isMusicActive();
         playIc.setImageBitmap(asset(on ? "ic/pause.png" : "ic/play_arrow.png"));
@@ -1508,7 +1546,8 @@ public class Main extends Activity {
                 + "\nOpen Headunit corriendo: " + (processRunning(PKG_HUR) ? "sí" : "no")
                 + "\nApp Bluetooth conectada: " + (bt != null && bt.isConnected() ? "sí" : "no")
                 + "\nControl remoto AVRCP: " + (BtAvrcp.connected() ? "celular conectado" : "sin celular")
-                + "\n" + FmRadio.diag() + (radioSuppressed ? " (pausada por StradaOS)" : "")
+                + "\n" + FmRadio.diag() + (radioMuted ? " (silenciada)" : radioSuppressed ? " (cambiada al celular)" : "")
+                + "\nAcceso a notificaciones: " + (MediaListener.connected ? "activo" : "no (la radio se detecta igual, pero sin nombre de emisora ni flechas directas)")
                 + "\nAudio Bluetooth automático: " + (clwBt ? (btAutoOn() ? "activado" : "desactivado") : "no aplica (otra marca)")
                 + (clwBt ? "" : "\nApp de música Bluetooth: " + (btMusicApp() != null ? btMusicApp().getPackageName() : "no encontrada")
                     + " · abrir al conectar: " + (prefs.getBoolean("bt_open_connect", false) ? "sí" : "no"))
