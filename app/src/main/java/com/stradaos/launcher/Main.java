@@ -2254,7 +2254,7 @@ public class Main extends Activity {
         row(w, "Ciudad", "Vacío = automática por GPS", manual.length() > 0 ? manual : (weatherNow != null && weatherNow.city != null ? weatherNow.city + " (GPS)" : "Automática"),
             edit("city_manual", "Ciudad (vacío = automática por GPS)", ""));
         LinearLayout m = section(body, "Mapa");
-        segmented(m, "Contraste del mapa", "Más definición en pantallas TFT/LCD", new String[]{"Normal", "Alto", "Máximo"}, prefs.getInt("map_contrast", 1), new IntCb() { public void on(int i) {
+        segmented(m, "Contraste del mapa", "Más definición en pantallas TFT/LCD", new String[]{"Suave", "Medio", "Fuerte"}, prefs.getInt("map_contrast", 1), new IntCb() { public void on(int i) {
             prefs.edit().putInt("map_contrast", i).apply(); rebuild();
         }});
         row(m, "Diagnóstico del mapa", "Fuentes probadas y errores", null, new Runnable() { public void run() {
