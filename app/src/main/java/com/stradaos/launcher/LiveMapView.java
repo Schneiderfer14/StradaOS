@@ -83,6 +83,7 @@ public class LiveMapView extends View {
         File old = new File(c.getCacheDir(), "tiles_v3");
         if (!dir.exists() && old.exists()) old.renameTo(dir);
         dir.mkdirs();
+        findPack();
         deleteOld(new File(c.getCacheDir(), "tiles"));
         deleteOld(new File(c.getCacheDir(), "tiles_v2"));
         bright = c.getSharedPreferences("launcher", 0).getInt("map_bright", 1);
@@ -137,7 +138,9 @@ public class LiveMapView extends View {
         File[] fs = dir.listFiles();
         if (fs != null) cached = fs.length;
         return "Posición: " + (Double.isNaN(lat) ? "sin GPS" : String.format(java.util.Locale.US, "%.5f, %.5f", lat, lon))
-                + "\nZoom: " + zoom + "\nProveedor: " + NAMES[provider]
+                + "\nZoom: " + zoom
+                + "\nMapa guardado: " + (pack != null ? pack.getAbsolutePath() + (packDarken ? " (oscurecido)" : "") : "no encontrado (carpeta StradaMapa)")
+                + "\nProveedor: " + NAMES[provider]
                 + (okCount == 0 && rounds > 0 ? " · ninguna fuente respondió (" + rounds + " vueltas)" : "")
                 + "\nTeselas descargadas: " + okCount + " · en caché: " + cached
                 + "\nErrores seguidos: " + netErrors + "\nÚltimo error: " + lastError
@@ -269,10 +272,11 @@ public class LiveMapView extends View {
                     int wx = ((tx % n) + n) % n;
                     float left = cx + (float) ((tx - fx) * ts), top = cy + (float) ((ty - fy) * ts);
                     dst.set(Math.round(left), Math.round(top), Math.round(left + ts) + 1, Math.round(top + ts) + 1);
-                    Bitmap b = get(zoom, wx, ty, 0);
+                    int st = packState(zoom, wx, ty);   // 2 = en el mapa guardado, 1 = leyéndose, 0 = no está
+                    Bitmap b = st == 2 ? mem.get(packKey(zoom, wx, ty)) : st == 1 ? null : get(zoom, wx, ty, 0);
                     if (b != null) {
                         c.drawBitmap(b, null, dst, tile);
-                        if (LABELS[provider] != null) {
+                        if (st == 0 && LABELS[provider] != null) {
                             Bitmap l = get(zoom, wx, ty, 1);
                             if (l != null) c.drawBitmap(l, null, dst, tile);
                         }
@@ -285,7 +289,7 @@ public class LiveMapView extends View {
             c.restore();
             drawMarker(c, cx, cy, rotate ? 0 : shownBr);
             if (animating) postInvalidateOnAnimation();
-            String attr = provider == 5 ? "© Esri, HERE, Garmin, © OpenStreetMap" : provider == 4 ? "© OpenStreetMap, SRTM · © OpenTopoMap" : "© colaboradores de OpenStreetMap";
+            String attr = pack != null ? "© colaboradores de OpenStreetMap" : provider == 5 ? "© Esri, HERE, Garmin, © OpenStreetMap" : provider == 4 ? "© OpenStreetMap, SRTM · © OpenTopoMap" : "© colaboradores de OpenStreetMap";
             c.drawText(attr, w - text.measureText(attr) - 10 * s, 14 * s, text);
         }
         c.restore();
@@ -312,6 +316,63 @@ public class LiveMapView extends View {
         c.restore();
     }
 
+    // ── mapa guardado en el equipo (sin internet) ──
+    // Carpeta StradaMapa en la memoria interna, con una versión clara y otra oscura en el formato {z}/{x}/{y}.png.
+    // Si existe, manda sobre las fuentes de internet; las teselas que no estén ahí se piden a internet como siempre.
+
+    private File pack;
+    private boolean packDarken;
+    private final HashSet<String> packMissing = new HashSet<String>();
+
+    private void findPack() {
+        try {
+            File root = new File(android.os.Environment.getExternalStorageDirectory(), "StradaMapa");
+            File mine = new File(root, Main.LIGHT ? "claro" : "oscuro");
+            File light = new File(root, "claro");
+            if (mine.isDirectory()) pack = mine;
+            else if (light.isDirectory()) { pack = light; packDarken = !Main.LIGHT; }   // solo hay versión clara
+        } catch (Throwable ignored) { pack = null; }
+    }
+
+    private static String packKey(int z, int x, int y) { return "L_" + z + "_" + x + "_" + y; }
+
+    private int packState(int z, int x, int y) {
+        if (pack == null) return 0;
+        String k = packKey(z, x, y);
+        if (mem.get(k) != null) return 2;
+        synchronized (queue) {
+            if (packMissing.contains(k)) return 0;
+            if (!pending.contains(k)) {
+                pending.add(k);
+                queue.addFirst(k);
+                if (workers < 2) { workers++; new Thread(worker).start(); }
+            }
+        }
+        return 1;
+    }
+
+    /** Lee una tesela del mapa guardado (en el hilo de descargas). */
+    private void loadPackTile(final String k) {
+        Bitmap lb = null;
+        try {
+            String[] q = k.split("_");
+            File f = new File(pack, q[1] + "/" + q[2] + "/" + q[3] + ".png");
+            if (f.exists()) lb = BitmapFactory.decodeFile(f.getAbsolutePath());
+            if (lb != null && packDarken) lb = darken(lb, bright);
+        } catch (Throwable ignored) { lb = null; }
+        final Bitmap fb = lb;
+        ui.post(new Runnable() {
+            public void run() {
+                synchronized (queue) {
+                    pending.remove(k);
+                    if (fb == null) packMissing.add(k);
+                }
+                if (fb != null) mem.put(k, fb);
+                invalidate();
+            }
+        });
+    }
+
     // ── teselas ──
 
     private Bitmap get(int z, int x, int y, int layer) {
@@ -336,6 +397,7 @@ public class LiveMapView extends View {
                     if (queue.isEmpty()) { workers--; return; }
                     k = queue.removeFirst();
                 }
+                if (k.startsWith("L_")) { loadPackTile(k); continue; }
                 Bitmap b = null;
                 try {
                     File f = new File(dir, k + (Main.LIGHT && Integer.parseInt(k.split("_")[0]) == 5 ? "L" : "") + ".png");
