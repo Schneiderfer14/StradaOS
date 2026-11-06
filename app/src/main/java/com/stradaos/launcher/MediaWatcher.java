@@ -115,6 +115,23 @@ public class MediaWatcher {
         listener.onTrack(t);
     }
 
+    /** true si la app que suena acepta ir a un punto de la canción. */
+    public boolean canSeek() {
+        MediaController c = current;
+        if (c == null) return false;
+        try {
+            PlaybackState st = c.getPlaybackState();
+            return st != null && (st.getActions() & PlaybackState.ACTION_SEEK_TO) != 0;
+        } catch (Throwable e) { return false; }
+    }
+
+    /** Va a ese punto de la canción (en milisegundos). */
+    public boolean seekTo(long ms) {
+        MediaController c = current;
+        if (c == null || !canSeek()) return false;
+        try { c.getTransportControls().seekTo(ms); return true; } catch (Throwable e) { return false; }
+    }
+
     /** Controles: 1 siguiente, -1 anterior, 0 play/pausa. Devuelve false si no hay sesión. */
     public boolean command(int which) {
         MediaController c = current;
