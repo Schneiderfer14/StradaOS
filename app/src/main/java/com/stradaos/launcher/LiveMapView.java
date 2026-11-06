@@ -318,8 +318,18 @@ public class LiveMapView extends View {
         c.restore();
     }
 
+    private boolean stale;
+
+    /** true = posición guardada (sin GPS en vivo): la flecha se dibuja en gris. */
+    public void setStale(boolean b) {
+        if (b == stale) return;
+        stale = b;
+        invalidate();
+    }
+
     private void drawMarker(Canvas c, float x, float y, float br) {
-        halo.setColor((Main.RED & 0x00FFFFFF) | 0x40000000);
+        int col = stale ? 0xFF8B9099 : Main.RED;
+        halo.setColor((col & 0x00FFFFFF) | 0x40000000);
         c.drawCircle(x, y, 22 * s, halo);
         c.save();
         c.rotate(br, x, y);
@@ -330,7 +340,7 @@ public class LiveMapView extends View {
         tri.lineTo(x - 10 * s, y + 11 * s);
         tri.close();
         arrow.setStyle(Paint.Style.FILL);
-        arrow.setColor(Main.RED);
+        arrow.setColor(col);
         c.drawPath(tri, arrow);
         arrow.setStyle(Paint.Style.STROKE);
         arrow.setStrokeWidth(2 * s);
