@@ -71,7 +71,7 @@ public class MusicCard extends View {
             paint.setShader(sh);
             c.drawRoundRect(box, radius, radius, paint);
             // carátula nítida, cuadrada, arriba al centro
-            float side = Math.min(w - 64 * s, h - 170 * s);
+            float side = Math.min(w - 64 * s, h - 212 * s);
             if (side > 40 * s && source != null && !source.isRecycled()) {
                 RectF a = new RectF((w - side) / 2f, 18 * s, (w + side) / 2f, 18 * s + side);
                 BitmapShader as = new BitmapShader(source, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
@@ -89,13 +89,13 @@ public class MusicCard extends View {
             if (note != null) {
                 paint.setShader(null);
                 paint.setAlpha(Main.LIGHT ? 110 : 75);
-                float sz = 80 * s, cy = (h - 140 * s) / 2f;
+                float sz = 80 * s, cy = (h - 190 * s) / 2f;
                 c.drawBitmap(note, null, new RectF((w - sz) / 2f, cy - sz / 2f, (w + sz) / 2f, cy + sz / 2f), paint);
                 paint.setAlpha(255);
             }
         }
         // velo inferior para el texto
-        float fadeTop = h - 150 * s;
+        float fadeTop = h - 200 * s;
         paint.setShader(new LinearGradient(0, fadeTop, 0, fadeTop + 55 * s, Main.FADE & 0x00FFFFFF, Main.FADE, Shader.TileMode.CLAMP));
         c.save();
         c.clipRect(0, fadeTop, w, h);
@@ -103,7 +103,8 @@ public class MusicCard extends View {
         c.restore();
         paint.setShader(null);
 
-        // barra de progreso
+        // barra de progreso (0 = la dibuja otra vista)
+        if (barY <= 0) return;
         float y = h - barY, x0 = 16 * s, x1 = w - 16 * s, th = 4 * s;
         bar.setColor(Main.LIGHT ? 0x1F000000 : 0x40FFFFFF);
         c.drawRoundRect(new RectF(x0, y, x1, y + th), th / 2, th / 2, bar);
