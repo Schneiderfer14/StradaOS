@@ -209,6 +209,8 @@ public class Main extends Activity {
         });
         clwBt = BtBridge.available(this);
         BtAvrcp.init(this);
+        FmRadio.register(this);
+        FmRadio.listener = new FmRadio.Listener() { public void onRadioChanged() { radioChanged(); } };
         bt.onPhoneStarted = new Runnable() { public void run() { onPhoneStartedBt(); } };
         bt.onLost = new Runnable() { public void run() { btRouted = false; } };
         h.postDelayed(btTicker, 3000);
@@ -783,6 +785,14 @@ public class Main extends Activity {
         src.addView(sourceTv);
         placeWrap(card, src, 14, 14);
         srcBox = src;
+        // tocar la etiqueta cambia de fuente en un toque (radio FM ⇄ celular)
+        src.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { switchSource(); } });
+        radioFreqTv = tv("", 72, Color.WHITE, true);
+        radioFreqTv.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        radioFreqTv.setGravity(Gravity.CENTER);
+        radioFreqTv.setShadowLayer(6 * s, 0, 2 * s, 0x59000000);
+        place(card, radioFreqTv, 0, 56, cw, 84);
+        radioFreqTv.setVisibility(View.GONE);
 
         int onText = LIGHT ? 0xFF000000 : 0xFFFFFFFF;
         int subText = LIGHT ? 0xE6000000 : 0xE6FFFFFF;
@@ -798,6 +808,9 @@ public class Main extends Activity {
         seekLine = new SeekLine(this, s, LIGHT ? 0x40000000 : 0x4DFFFFFF);
         seekLine.setOnSeek(new SeekLine.OnSeek() { public void seek(float f) { seekTo(f); } });
         place(card, seekLine, 4, mh - 118, cw - 8, 34);
+        radioDial = new RadioDial(this, s, onText);
+        place(card, radioDial, 16, mh - 122, cw - 32, 40);
+        radioDial.setVisibility(View.GONE);
 
         FrameLayout play = new FrameLayout(this);
         GradientDrawable pg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{lighten(RED, 0.18f), RED});
@@ -827,6 +840,103 @@ public class Main extends Activity {
     private ImageView srcIc;
     private View srcBox;
     private SeekLine seekLine;
+
+    // ── radio FM del equipo ──
+    private TextView radioFreqTv;
+    private RadioDial radioDial;
+    private boolean radioSuppressed, wasRadio;
+    private AudioManager.OnAudioFocusChangeListener focusL;
+
+    /** El cuadro muestra la radio cuando suena y no la pausamos nosotros. */
+    private boolean showRadio() { return FmRadio.on && !radioSuppressed; }
+
+    private void radioChanged() {
+        boolean r = showRadio();
+        // la radio empezó a sonar mientras sonaba el celular: se pausa el celular (nunca suenan los dos)
+        if (r && !wasRadio) pausePhone();
+        wasRadio = r;
+        renderTrack();
+    }
+
+    private void pausePhone() {
+        if (Boolean.TRUE.equals(playingState) && (curOrigin == null || "bt".equals(curOrigin)) && BtAvrcp.connected()) {
+            BtAvrcp.send(BtAvrcp.KEY_PAUSE);
+            playingState = false;
+            userWants = false;
+            userToggleAt = SystemClock.elapsedRealtime();
+        }
+    }
+
+    /** Pide el sonido para StradaOS (de forma temporal): la radio FM se pausa y vuelve sola si se suelta. */
+    private void takeFocus() {
+        try {
+            if (focusL == null) focusL = new AudioManager.OnAudioFocusChangeListener() {
+                public void onAudioFocusChange(int fc) {
+                    if (fc == AudioManager.AUDIOFOCUS_LOSS) {
+                        // otra app (por ejemplo la radio al abrirla) tomó el sonido: se pausa el celular
+                        BtBridge.log("otra app tomó el sonido");
+                        radioSuppressed = false;
+                        pausePhone();
+                        renderTrack();
+                    }
+                }
+            };
+            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            int r = am.requestAudioFocus(focusL, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+            BtBridge.log("sonido pedido para StradaOS: " + (r == AudioManager.AUDIOFOCUS_REQUEST_GRANTED ? "concedido" : "negado"));
+        } catch (Throwable ignored) { }
+    }
+
+    private void releaseFocus() {
+        try { if (focusL != null) ((AudioManager) getSystemService(AUDIO_SERVICE)).abandonAudioFocus(focusL); } catch (Throwable ignored) { }
+    }
+
+    /** Botón rojo en modo radio: pausa la radio y el cuadro vuelve al modo música. */
+    private void pauseRadio() {
+        takeFocus();
+        radioSuppressed = true;
+        wasRadio = false;
+        renderTrack();
+    }
+
+    /** Etiqueta del cuadro: cambia de fuente en un toque (radio FM ⇄ celular). */
+    private void switchSource() {
+        if (showRadio()) {
+            takeFocus();                 // la radio se pausa
+            radioSuppressed = true;
+            wasRadio = false;
+            if (BtAvrcp.connected()) {
+                BtAvrcp.send(BtAvrcp.KEY_PLAY);
+                playingState = true;
+                userWants = true;
+                userToggleAt = SystemClock.elapsedRealtime();
+            } else if (!sendBtCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)) sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY);
+        } else {
+            pausePhone();
+            radioSuppressed = false;
+            releaseFocus();              // la radio recupera el sonido y vuelve a sonar
+            h.postDelayed(new Runnable() { public void run() {
+                if (!FmRadio.on) FmRadio.launch(Main.this);   // si no volvió sola, se abre la app de radio
+            } }, 1500);
+        }
+        renderTrack();
+    }
+
+    private void renderRadio() {
+        float f = FmRadio.freq;
+        String fs = Float.isNaN(f) ? "FM" : FmRadio.fmt(f);
+        android.text.SpannableString sp = new android.text.SpannableString(Float.isNaN(f) ? fs : fs + " MHz");
+        if (!Float.isNaN(f)) sp.setSpan(new android.text.style.RelativeSizeSpan(0.3f), fs.length(), sp.length(), 0);
+        radioFreqTv.setText(sp);
+        radioDial.setFreq(f);
+        trackTv.setText(FmRadio.name != null ? FmRadio.name : "Radio FM");
+        artistTv.setText(FmRadio.rds != null ? FmRadio.rds : "");
+        playerArt.setArt(null);
+        sourceTv.setText("RADIO FM");
+        srcIc.setImageBitmap(asset("ic/radio.png"));
+        srcBox.setVisibility(View.VISIBLE);
+        playIc.setImageBitmap(asset("ic/pause.png"));
+    }
 
     /** true si la app que suena en el radio deja adelantar (el Bluetooth del celular no tiene esa orden). */
     private boolean canSeek() {
@@ -1176,6 +1286,22 @@ public class Main extends Activity {
             public void onClick(View v) {
                 int which = code == KeyEvent.KEYCODE_MEDIA_NEXT ? 1 : code == KeyEvent.KEYCODE_MEDIA_PREVIOUS ? -1 : 0;
                 boolean done = false;
+                // modo radio: el botón rojo pausa la radio y las flechas cambian de emisora
+                if (showRadio()) {
+                    if (which == 0) pauseRadio();
+                    else if (which == 1) FmRadio.next(Main.this);
+                    else FmRadio.prev(Main.this);
+                    return;
+                }
+                // play del celular: antes se pide el sonido para que la radio FM se pause (no suenan los dos)
+                if (which == 0) {
+                    boolean on0 = playingState != null ? playingState
+                            : ((AudioManager) getSystemService(AUDIO_SERVICE)).isMusicActive();
+                    if (!on0) {
+                        takeFocus();
+                        if (FmRadio.on) radioSuppressed = true;
+                    }
+                }
 
                 if (mediaWatcher != null && "ms".equals(curOrigin)) {
                     try { done = mediaWatcher.command(which); } catch (Throwable ignored) { }
@@ -1238,6 +1364,7 @@ public class Main extends Activity {
 
     private void updatePlayIcon() {
         if (playIc == null) return;
+        if (showRadio()) { playIc.setImageBitmap(asset("ic/pause.png")); return; }
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         boolean on = playingState != null ? playingState : am.isMusicActive();
         playIc.setImageBitmap(asset(on ? "ic/pause.png" : "ic/play_arrow.png"));
@@ -1381,6 +1508,7 @@ public class Main extends Activity {
                 + "\nOpen Headunit corriendo: " + (processRunning(PKG_HUR) ? "sí" : "no")
                 + "\nApp Bluetooth conectada: " + (bt != null && bt.isConnected() ? "sí" : "no")
                 + "\nControl remoto AVRCP: " + (BtAvrcp.connected() ? "celular conectado" : "sin celular")
+                + "\n" + FmRadio.diag() + (radioSuppressed ? " (pausada por StradaOS)" : "")
                 + "\nAudio Bluetooth automático: " + (clwBt ? (btAutoOn() ? "activado" : "desactivado") : "no aplica (otra marca)")
                 + (clwBt ? "" : "\nApp de música Bluetooth: " + (btMusicApp() != null ? btMusicApp().getPackageName() : "no encontrada")
                     + " · abrir al conectar: " + (prefs.getBoolean("bt_open_connect", false) ? "sí" : "no"))
@@ -1420,6 +1548,13 @@ public class Main extends Activity {
 
     private void renderTrack() {
         if (trackTv == null) return;
+        boolean radio = showRadio();
+        radioFreqTv.setVisibility(radio ? View.VISIBLE : View.GONE);
+        radioDial.setVisibility(radio ? View.VISIBLE : View.GONE);
+        seekLine.setVisibility(radio ? View.GONE : View.VISIBLE);
+        timePosTv.setVisibility(radio ? View.GONE : View.VISIBLE);
+        playerArt.setNote(!radio);
+        if (radio) { renderRadio(); return; }
         if (curTitle == null && curArtist == null) {
             trackTv.setText("Nada sonando");
             artistTv.setText("Radio, Bluetooth o USB");
@@ -1441,7 +1576,8 @@ public class Main extends Activity {
             String src = curSource != null ? curSource.toLowerCase(ES) : "";
             srcIc.setImageBitmap(asset("ic/" + (src.contains("bluetooth") ? "bluetooth" : src.contains("radio") || src.contains("fm") ? "radio"
                     : src.contains("usb") ? "usb" : "music_note") + ".png"));
-            srcBox.setVisibility(curSource == null ? View.GONE : View.VISIBLE);
+            if (curSource == null) sourceTv.setText("MÚSICA");
+            srcBox.setVisibility(View.VISIBLE);   // siempre visible: tocarla cambia a la radio
         }
         if (playIc != null) {
             boolean on = playingState != null ? playingState
