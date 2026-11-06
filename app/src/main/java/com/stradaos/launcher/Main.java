@@ -983,13 +983,30 @@ public class Main extends Activity {
     }
 
     private float lastKmh;
+    private Location brAnchor, shownLoc;
 
     private void feedMap(Location l) {
         if (l != null) { wLat = l.getLatitude(); wLon = l.getLongitude(); }
         if (liveMap == null || l == null) return;
         float kmh = l.hasSpeed() ? l.getSpeed() * 3.6f : 0;
         lastKmh = kmh;
-        liveMap.setPosition(l.getLatitude(), l.getLongitude(), l.hasBearing() && kmh > 4 ? l.getBearing() : Float.NaN, kmh);
+        // Detenido: si la lectura nueva cae a pocos metros, el cursor no se mueve (el GPS "baila" unos metros).
+        if (shownLoc != null && liveMap.hasFix() && kmh < 3 && shownLoc.distanceTo(l) < 12) {
+            liveMap.setStale(lastFix == 0);
+            liveMap.setVisibility(View.VISIBLE);
+            updateMapTag();
+            return;
+        }
+        // Rumbo calculado con el avance real (cada 12 m como mínimo) y solo con velocidad y precisión
+        // suficientes: el rumbo que manda el GPS a baja velocidad es ruido y hacía girar el mapa.
+        float br = Float.NaN;
+        boolean precise = !l.hasAccuracy() || l.getAccuracy() <= 35;
+        if (kmh >= 8 && precise) {
+            if (brAnchor == null) brAnchor = new Location(l);
+            else if (brAnchor.distanceTo(l) >= 12) { br = brAnchor.bearingTo(l); brAnchor = new Location(l); }
+        } else if (kmh < 3) brAnchor = null;
+        liveMap.setPosition(l.getLatitude(), l.getLongitude(), br, kmh);
+        shownLoc = new Location(l);
         liveMap.setStale(lastFix == 0);   // flecha gris mientras no haya GPS en vivo
         liveMap.setVisibility(View.VISIBLE);
         updateMapTag();
