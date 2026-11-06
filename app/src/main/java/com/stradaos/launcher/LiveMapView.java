@@ -192,6 +192,7 @@ public class LiveMapView extends View {
 
     public void setPosition(double la, double lo, float br, float speedKmh) {
         long now = android.os.SystemClock.uptimeMillis();
+        float curBr = shownBearing(now);   // rumbo que se ve ahora (antes de reiniciar la animación)
         if (Double.isNaN(lat)) {
             lat = la; lon = lo; fromLat = la; fromLon = lo;
             animStart = 0;
@@ -204,9 +205,15 @@ public class LiveMapView extends View {
             animDur = Math.max(250, Math.min(1200, now - lastFixAt));
         }
         lastFixAt = now;
-        if (!Float.isNaN(br)) {
-            fromBearing = Float.isNaN(bearing) ? br : shownBearing(now);
-            bearing = br;
+        if (Float.isNaN(bearing)) {
+            if (!Float.isNaN(br)) { bearing = norm(br); fromBearing = bearing; }
+        } else {
+            // sigue desde donde se ve ahora; los cambios chicos (ruido) se ignoran y los grandes se suavizan
+            fromBearing = curBr;
+            if (!Float.isNaN(br)) {
+                float d = diff(norm(br), bearing);
+                if (Math.abs(d) >= 4f) bearing = norm(bearing + d * 0.6f);
+            }
         }
         if (userZoom && now - userZoomAt > 30000) userZoom = false;   // a los 30 s vuelve al zoom automático
         if (!userZoom) zoom = speedKmh > 70 ? 15 : speedKmh > 35 ? 16 : 17;
@@ -242,8 +249,20 @@ public class LiveMapView extends View {
     private float shownBearing(long now) {
         if (Float.isNaN(bearing)) return 0;
         if (Float.isNaN(fromBearing)) return bearing;
-        float d = ((bearing - fromBearing + 540f) % 360f) - 180f;   // giro por el lado más corto
-        return fromBearing + d * animT(now);
+        return norm(fromBearing + diff(bearing, fromBearing) * animT(now));   // giro por el lado más corto
+    }
+
+    /** Ángulo entre 0 y 360. Sin esto, al dar varias vueltas en el mismo sentido el ángulo crecía y
+     *  la cuenta del lado más corto fallaba: el mapa daba una vuelta completa en cada lectura. */
+    private static float norm(float a) {
+        a %= 360f;
+        return a < 0 ? a + 360f : a;
+    }
+
+    /** Diferencia más corta de «from» a «to», entre -180 y 180. */
+    private static float diff(float to, float from) {
+        float d = norm(to - from);
+        return d > 180f ? d - 360f : d;
     }
 
     private boolean userZoom;
