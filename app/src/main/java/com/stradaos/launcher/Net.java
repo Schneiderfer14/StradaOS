@@ -57,13 +57,22 @@ public class Net {
                 } catch (Throwable t) { bad++; }
             }
             final X509TrustManager bundled = defaultTm(ks);
+            bundledKs = ks;
             X509TrustManager both = new X509TrustManager() {
                 public void checkClientTrusted(X509Certificate[] chain, String auth) throws java.security.cert.CertificateException {
                     system.checkClientTrusted(chain, auth);
                 }
                 public void checkServerTrusted(X509Certificate[] chain, String auth) throws java.security.cert.CertificateException {
                     try { system.checkServerTrusted(chain, auth); }
-                    catch (java.security.cert.CertificateException e) { bundled.checkServerTrusted(chain, auth); }
+                    catch (java.security.cert.CertificateException e) {
+                        try { bundled.checkServerTrusted(chain, auth); }
+                        catch (java.security.cert.CertificateException e2) {
+                            // Radios sin pila de reloj arrancan en 2007: los certificados parecen «aún no válidos».
+                            // Con el reloj claramente mal, se valida la cadena con la fecha del GPS.
+                            if (!clockSuspicious()) throw e2;
+                            checkAtTrustedDate(chain);
+                        }
+                    }
                 }
                 public X509Certificate[] getAcceptedIssuers() { return system.getAcceptedIssuers(); }
             };
@@ -75,6 +84,74 @@ public class Net {
         } catch (Throwable e) {
             factory = null;
             initInfo = "TLS no disponible: " + e;
+        }
+    }
+
+    // ── hora confiable (GPS) para equipos que pierden la fecha al apagarse ──
+
+    private static KeyStore bundledKs;
+    private static java.util.Set<java.security.cert.TrustAnchor> anchors;
+    private static volatile long gpsOffset;
+    private static volatile boolean gpsKnown;
+
+    /** Hora UTC de una lectura del GPS: queda como referencia si el reloj del equipo está mal. */
+    static void gpsTime(long t) {
+        if (t <= 0) return;
+        gpsOffset = t - System.currentTimeMillis();
+        gpsKnown = true;
+    }
+
+    /** El reloj del equipo es anterior a 2025 o difiere del GPS en más de un día. */
+    static boolean clockSuspicious() {
+        if (gpsKnown && Math.abs(gpsOffset) > 86400000L) return true;
+        return java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) < 2025;
+    }
+
+    /** Hora actual: la del GPS si el reloj del equipo está mal y ya hubo una lectura. */
+    static long now() {
+        long t = System.currentTimeMillis();
+        return gpsKnown && Math.abs(gpsOffset) > 120000L ? t + gpsOffset : t;
+    }
+
+    private static void checkAtTrustedDate(X509Certificate[] chain) throws java.security.cert.CertificateException {
+        try {
+            synchronized (Net.class) {
+                if (anchors == null) {
+                    java.util.HashSet<java.security.cert.TrustAnchor> set = new java.util.HashSet<java.security.cert.TrustAnchor>();
+                    KeyStore sys = KeyStore.getInstance("AndroidCAStore");
+                    sys.load(null, null);
+                    for (KeyStore k : new KeyStore[]{sys, bundledKs}) {
+                        if (k == null) continue;
+                        java.util.Enumeration<String> e = k.aliases();
+                        while (e.hasMoreElements()) {
+                            Certificate c = k.getCertificate(e.nextElement());
+                            if (c instanceof X509Certificate) set.add(new java.security.cert.TrustAnchor((X509Certificate) c, null));
+                        }
+                    }
+                    anchors = set;
+                }
+            }
+            java.util.ArrayList<X509Certificate> path = new java.util.ArrayList<X509Certificate>(java.util.Arrays.asList(chain));
+            while (path.size() > 1) {   // la raíz autofirmada sobra: ya está entre las anclas
+                X509Certificate last = path.get(path.size() - 1);
+                if (last.getSubjectX500Principal().equals(last.getIssuerX500Principal())) path.remove(path.size() - 1);
+                else break;
+            }
+            long when;
+            if (gpsKnown) when = System.currentTimeMillis() + gpsOffset;
+            else {   // sin GPS todavía: el punto medio de la validez del certificado del servidor
+                long nb = chain[0].getNotBefore().getTime(), na = chain[0].getNotAfter().getTime();
+                when = nb + (na - nb) / 2;
+            }
+            java.security.cert.PKIXParameters p = new java.security.cert.PKIXParameters(anchors);
+            p.setRevocationEnabled(false);
+            p.setDate(new java.util.Date(when));
+            java.security.cert.CertPathValidator.getInstance("PKIX")
+                .validate(CertificateFactory.getInstance("X.509").generateCertPath(path), p);
+        } catch (java.security.cert.CertificateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new java.security.cert.CertificateException("reloj del equipo: " + e.getMessage(), e);
         }
     }
 
