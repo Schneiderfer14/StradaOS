@@ -132,6 +132,9 @@ public class Main extends Activity {
 
     private LocationManager lm;
     private long lastFix;
+    // último play/pausa tocado: el celular tarda en confirmarlo y mientras tanto manda su estado anterior
+    private long userToggleAt;
+    private boolean userWants;
     private boolean installing;
 
     // ───────────────────────── ciclo de vida ─────────────────────────
@@ -1106,7 +1109,12 @@ public class Main extends Activity {
                             : ((AudioManager) getSystemService(AUDIO_SERVICE)).isMusicActive();
                     int key = which == 1 ? BtAvrcp.KEY_NEXT : which == -1 ? BtAvrcp.KEY_PREV : (on ? BtAvrcp.KEY_PAUSE : BtAvrcp.KEY_PLAY);
                     done = BtAvrcp.send(key);
-                    if (done && which == 0) { playingState = !on; renderTrack(); }
+                    if (done && which == 0) {
+                        playingState = !on;
+                        userWants = !on;
+                        userToggleAt = SystemClock.elapsedRealtime();
+                        renderTrack();
+                    }
                 }
                 if (!done && !sendBtCommand(code)) sendMediaKey(code);
                 h.postDelayed(new Runnable() { public void run() { updatePlayIcon(); } }, 600);
@@ -1221,6 +1229,8 @@ public class Main extends Activity {
         if (t.artSet) curArt = t.art;
         long pos = currentPos();
         if (t.positionMs >= 0) { pos = t.positionMs; posKnown = true; }
+        // durante 3 s tras tocar play/pausa se ignoran los avisos que aún traen el estado anterior
+        if (t.playing != null && t.playing != userWants && SystemClock.elapsedRealtime() - userToggleAt < 3000) t.playing = null;
         if (t.playing != null) {
             playingState = t.playing;
         }
