@@ -49,6 +49,15 @@ public class MusicCard extends View {
         invalidate();
     }
 
+    private boolean noteOn = true;
+
+    /** Muestra u oculta la nota musical del centro (en modo radio va la frecuencia). */
+    public void setNote(boolean on) {
+        if (on == noteOn) return;
+        noteOn = on;
+        invalidate();
+    }
+
     public void setProgress(float p) {
         if (Math.abs(p - progress) < 0.001f) return;
         progress = p;
@@ -86,7 +95,7 @@ public class MusicCard extends View {
         } else {
             paint.setShader(new LinearGradient(0, 0, w * 0.6f, h, Main.MUSIC_A, Main.MUSIC_B, Shader.TileMode.CLAMP));
             c.drawRoundRect(box, radius, radius, paint);
-            if (note != null) {
+            if (note != null && noteOn) {
                 paint.setShader(null);
                 paint.setAlpha(Main.LIGHT ? 110 : 75);
                 float sz = 80 * s, cy = (h - 190 * s) / 2f;
