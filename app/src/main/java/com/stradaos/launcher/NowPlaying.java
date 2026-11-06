@@ -65,6 +65,13 @@ public class NowPlaying {
     static final String AVRCP = "com.autochips.bluetooth.avrcpct.AvrcpCtPlayerUtility.";
     static final String AVRCP_MEDIA = AVRCP + "action.ACTION_MEDIA_DATA_UPDATE";
     static final String AVRCP_PLAYBACK = AVRCP + "action.ACTION_PLAYBACK_DATA_UPDATE";
+    // Pantallas Autochips con la app «Bluetooth» de fábrica (com.autochips.bluetooth): el servicio Bluetooth del
+    // sistema (AvrcpControllerService modificado) publica las respuestas AVRCP con estas acciones.
+    static final String ACP = "com.autochips.bluetooth.avrcpct.profile.";
+    static final String ACP_ATTRS = ACP + "action.GET_ELEMENT_ATTRIBUTES";
+    static final String ACP_STATUS = ACP + "action.GET_PLAYER_STATUS";
+    static final String ACP_EVENT = ACP + "action.ACTION_EVENT_NOTIFICATION_CHANGED";
+    static final String ACP_KEY = ACP + "action.PASSTHROUGH_COMMAND_CNF";
     static final String CLW_INFO = "com.clw.intent.MEDIA_INFO";
     static final String CLW_STATE = "com.clw.intent.MEDIA_PLAY_STATE";
     static final String CLW_TIME = "com.clw.intent.MEDIA_PLAY_TIME_INFO";
@@ -87,7 +94,8 @@ public class NowPlaying {
     public void start() {
         IntentFilter f = new IntentFilter();
         for (String a : ACTIONS) f.addAction(a);
-        for (String a : new String[]{AVRCP_MEDIA, AVRCP_PLAYBACK, CLW_INFO, CLW_STATE, CLW_TIME, CLW_IMAGE}) f.addAction(a);
+        for (String a : new String[]{AVRCP_MEDIA, AVRCP_PLAYBACK, CLW_INFO, CLW_STATE, CLW_TIME, CLW_IMAGE,
+                ACP_ATTRS, ACP_STATUS, ACP_EVENT, ACP_KEY}) f.addAction(a);
         String[] extra = ctx.getSharedPreferences("launcher", 0).getString("extra_actions", "").split("[,\\s]+");
         for (String a : extra) if (a.trim().length() > 3) f.addAction(a.trim());
         try { ctx.registerReceiver(receiver, f); registered = true; } catch (Throwable ignored) { }
@@ -127,6 +135,7 @@ public class NowPlaying {
 
     /** Avisos propios de la pantalla (Bluetooth Autochips y widget multimedia Clinkway). */
     private boolean handleVendor(String a, Bundle x) {
+        if (a != null && a.startsWith(ACP)) { handleAutochips(a, x); return true; }
         if (AVRCP_MEDIA.equals(a)) {
             Track t = new Track();
             t.origin = "bt";
@@ -188,6 +197,82 @@ public class NowPlaying {
             return true;
         }
         return false;
+    }
+
+    private final java.util.HashMap<String, Long> acpLogged = new java.util.HashMap<String, Long>();
+
+    /**
+     * Respuestas AVRCP de las pantallas Autochips. Los atributos llegan en pares
+     * extra.ATTRIBUTE_ID_n / extra.VALUE_n (n en hexadecimal) con los ID estándar de AVRCP:
+     * 1 título, 2 artista, 3 álbum, 7 duración en ms. El estado trae extra.PLAY_STATUS
+     * (0 detenido, 1 sonando, 2 pausa), extra.SONG_LENGTH y extra.SONG_POSITION.
+     */
+    private void handleAutochips(String a, Bundle x) {
+        logAcp(a, x);
+        Track t = new Track();
+        t.origin = "bt";
+        t.source = "Bluetooth";
+        if (ACP_ATTRS.equals(a)) {
+            java.util.HashMap<Integer, String> attrs = new java.util.HashMap<Integer, String>();
+            String idKey = ACP + "extra.ATTRIBUTE_ID_", valKey = ACP + "extra.VALUE_";
+            for (String k : x.keySet()) {
+                if (!k.startsWith(idKey)) continue;
+                String n = k.substring(idKey.length());
+                Object id = x.get(k), v = x.get(valKey + n);
+                if (id instanceof Number && v != null) attrs.put(((Number) id).intValue(), String.valueOf(v));
+            }
+            if (attrs.isEmpty()) {   // por si los valores vienen indexados directamente por el ID del atributo
+                for (int id : new int[]{1, 2, 3, 7}) {
+                    Object v = x.get(valKey + Integer.toHexString(id));
+                    if (v != null) attrs.put(id, String.valueOf(v));
+                }
+            }
+            t.title = clean(attrs.get(1));
+            t.artist = clean(attrs.get(2));
+            t.album = clean(attrs.get(3));
+            try { if (attrs.get(7) != null) t.durationMs = Long.parseLong(attrs.get(7).trim()); } catch (Exception ignored) { }
+            if (t.title != null) btTitle = t.title;
+            if (t.artist != null) btArtist = t.artist;
+            if (t.title == null && t.artist == null) return;
+            emit(t);
+            return;
+        }
+        if (ACP_STATUS.equals(a) || ACP_EVENT.equals(a)) {
+            t.title = btTitle;
+            t.artist = btArtist;
+            Object st = x.get(ACP + "extra.PLAY_STATUS");
+            if (st instanceof Number) {
+                int v = ((Number) st).intValue();
+                if (v == 1) t.playing = true; else if (v == 0 || v == 2) t.playing = false;
+            }
+            long len = num(x, ACP + "extra.SONG_LENGTH");
+            long pos = num(x, ACP + "extra.SONG_POSITION");
+            if (len > 0) t.durationMs = len;
+            if (pos >= 0 && pos != 0xFFFFFFFFL) t.positionMs = pos;
+            if (t.playing == null && t.positionMs < 0 && t.durationMs < 0) return;
+            emit(t);
+        }
+    }
+
+    private static String clean(String s) {
+        if (s == null) return null;
+        s = s.trim();
+        return s.length() == 0 || "Not Provided".equalsIgnoreCase(s) || "unknown".equalsIgnoreCase(s) ? null : s;
+    }
+
+    /** Anota en el diagnóstico Bluetooth qué trae cada aviso Autochips (una vez cada 30 s por tipo). */
+    private void logAcp(String a, Bundle x) {
+        long now = android.os.SystemClock.elapsedRealtime();
+        Long last = acpLogged.get(a);
+        if (last != null && now - last < 30000) return;
+        acpLogged.put(a, now);
+        StringBuilder b = new StringBuilder(a.substring(a.lastIndexOf('.') + 1)).append(':');
+        for (String k : x.keySet()) {
+            String v = String.valueOf(x.get(k));
+            b.append(' ').append(k.startsWith(ACP + "extra.") ? k.substring(ACP.length() + 6) : k)
+             .append('=').append(v.length() > 24 ? v.substring(0, 24) + "…" : v);
+        }
+        BtBridge.log(b.toString());
     }
 
     private String sourceFromAction(String a) {
