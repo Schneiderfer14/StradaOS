@@ -533,12 +533,12 @@ public class Main extends Activity {
         FrameLayout.LayoutParams rlp = new FrameLayout.LayoutParams((int) ((W - 1024 * s) / 2 + RAIL_W * s), ViewGroup.LayoutParams.MATCH_PARENT);
         rlp.gravity = Gravity.LEFT;
         root.addView(railBg, rlp);
-        // sombra de la columna sobre el mapa. Sin elevación a propósito: los ajustes y el cajón de apps
-        // se agregan después a root y tienen que quedar por encima de la pantalla de inicio.
+        // borde nítido de la columna sobre el mapa (en pantallas TFT una sombra difusa se ve borrosa).
+        // Sin elevación a propósito: los ajustes y el cajón de apps se agregan después a root y tienen que
+        // quedar por encima de la pantalla de inicio.
         View railShadow = new View(this);
-        railShadow.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{LIGHT ? 0x33141E2D : 0x80000000, 0x00000000}));
-        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams((int) (16 * s), ViewGroup.LayoutParams.MATCH_PARENT);
+        railShadow.setBackgroundColor(LIGHT ? 0xFF262B33 : 0x2EFFFFFF);
+        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(Math.max(2, (int) (3 * s)), ViewGroup.LayoutParams.MATCH_PARENT);
         slp.gravity = Gravity.LEFT;
         slp.leftMargin = rlp.width;
         root.addView(railShadow, slp);
@@ -558,15 +558,17 @@ public class Main extends Activity {
         if (settingsCat >= 0) showSettings(settingsCat);
     }
 
-    static final float RAIL_W = 120;
+    static final float RAIL_W = 112;
+    // ancho y posición de los recuadros de la derecha (vehículo y música)
+    static final float CARD_W = 343, CARD_X = 1008 - CARD_W;
     // zona del mapa que queda libre entre la columna y los widgets (en px de diseño)
-    static final float FREE_L = RAIL_W, FREE_R = 684;
+    static final float FREE_L = RAIL_W, FREE_R = CARD_X - 12;
 
     /** Recuadro flotante con profundidad: degradado, borde fino y sombra (Android 5+). */
     private GradientDrawable glass(float r) {
         GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{CARD_TOP, CARD_BOT});
         d.setCornerRadius(r * s);
-        d.setStroke(Math.max(1, (int) s), CARD_LINE);
+        d.setStroke(Math.max(2, (int) (1.5f * s)), CARD_LINE);
         return d;
     }
 
@@ -609,11 +611,11 @@ public class Main extends Activity {
         for (int i = 0; i < 5; i++) {
             final int idx = i;
             View plate = new View(this);
-            plate.setBackground(round(PLATE, 24));
-            place(board, plate, 16, 106 + 96 * i, 88, 88);
+            plate.setBackground(round(PLATE, 22));
+            place(board, plate, (RAIL_W - 82) / 2f, 104 + 94 * i, 82, 82);
             ImageView ic = new ImageView(this);
-            ic.setImageBitmap(AppIcons.make(AppIcons.NAMES[i], (int) (76 * s)));
-            place(board, ic, 22, 112 + 96 * i, 76, 76);
+            ic.setImageBitmap(AppIcons.make(AppIcons.NAMES[i], (int) (70 * s)));
+            place(board, ic, (RAIL_W - 70) / 2f, 110 + 94 * i, 70, 70);
             if (SDK >= 21) {
                 ic.setOutlineProvider(new android.view.ViewOutlineProvider() {
                     public void getOutline(View v, android.graphics.Outline o) {
@@ -686,29 +688,31 @@ public class Main extends Activity {
     private void buildVehicle() {
         FrameLayout card = new FrameLayout(this);
         card.setBackground(glass(22));
-        place(board, card, 696, 64, 312, 176);
+        place(board, card, CARD_X, 64, CARD_W, 176);
         lift(card, 10);
 
         // nombre y etiqueta en una fila: la etiqueta se ve completa y el nombre usa el espacio que sobra
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        carTv = tv(prefs.getString("car_name", "Mi vehículo"), 21, TEXT, true);
+        carTv = tv(prefs.getString("car_name", "Mi vehículo"), 24, TEXT, true);
+        carTv.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         head.addView(carTv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView chip = tv(prefs.getString("car_tag", ""), 14, Color.WHITE, true);
+        TextView chip = tv(prefs.getString("car_tag", ""), 17, Color.WHITE, true);
         chipTv = chip;
-        chip.setPadding((int) (8 * s), (int) (3 * s), (int) (8 * s), (int) (3 * s));
-        chip.setBackground(round(0xFFD23C3C, 6));
+        chip.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        chip.setPadding((int) (9 * s), (int) (4 * s), (int) (9 * s), (int) (4 * s));
+        chip.setBackground(round(0xFFE0302E, 7));
         chip.setVisibility(prefs.getString("car_tag", "").trim().length() == 0 ? View.GONE : View.VISIBLE);
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, -2);
-        clp.leftMargin = (int) (8 * s);
+        clp.leftMargin = (int) (6 * s);
         head.addView(chip, clp);
-        place(card, head, 16, 12, 280, 28);
+        place(card, head, 16, 8, CARD_W - 30, 36);
 
         FrameLayout photoBox = new FrameLayout(this);
         GradientDrawable pb = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{INNER_A, INNER_B});
         pb.setCornerRadius(16 * s);
         photoBox.setBackground(pb);
-        place(card, photoBox, 14, 50, 146, 110);
+        place(card, photoBox, 14, 50, 166, 110);
         Bitmap photo = CarPhoto.load(this);
         if (photo == null) photo = CarDefault.load();
         ImageView car = new ImageView(this);
@@ -727,34 +731,44 @@ public class Main extends Activity {
         LinearLayout g = new LinearLayout(this);
         g.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         gpsDot = new View(this);
-        gpsDot.setBackground(round(MUTED, 4));
-        g.addView(gpsDot, new LinearLayout.LayoutParams((int) (8 * s), (int) (8 * s)));
-        gpsTv = tv("GPS", 15, MUTED, false);
-        gpsTv.setPadding((int) (6 * s), 0, 0, 0);
+        gpsDot.setBackground(round(MUTED, 6));
+        g.addView(gpsDot, new LinearLayout.LayoutParams((int) (11 * s), (int) (11 * s)));
+        gpsTv = tv("GPS", 19, TEXT, true);
+        gpsTv.setPadding((int) (7 * s), 0, 0, 0);
         g.addView(gpsTv);
-        place(card, g, 164, 54, 132, 20);
+        place(card, g, 184, 48, CARD_W - 200, 26);
 
-        speedTv = tv("0", 64, TEXT, true);
+        speedTv = tv("0", 56, TEXT, true);
+        speedTv.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         speedTv.setGravity(Gravity.RIGHT);
-        place(card, speedTv, 164, 76, 132, 68);
-        TextView kmh = tv("km/h", 17, MUTED, false);
+        place(card, speedTv, 184, 74, CARD_W - 200, 64);
+        TextView kmh = tv("km/h", 22, TEXT, true);
         kmh.setGravity(Gravity.RIGHT);
-        place(card, kmh, 164, 144, 132, 22);
+        place(card, kmh, 184, 138, CARD_W - 200, 30);
         setGps(false, 0);
     }
 
     private void buildMusic() {
         final float mh = 336;
         FrameLayout card = new FrameLayout(this);
-        place(board, card, 696, 252, 312, mh);
+        final float cw = CARD_W;
+        place(board, card, CARD_X, 252, cw, mh);
         GradientDrawable shadowShape = new GradientDrawable();
         shadowShape.setColor(MUSIC_B);
         shadowShape.setCornerRadius(22 * s);
         card.setBackground(shadowShape);
         lift(card, 10);
 
-        playerArt = new MusicCard(this, s, asset("ic/music_note.png"), 80);
+        playerArt = new MusicCard(this, s, asset("ic/music_note.png"), 0);   // la barra la dibuja SeekLine
         card.addView(playerArt, new FrameLayout.LayoutParams(-1, -1));
+        // borde nítido del recuadro (igual que los demás)
+        View edge = new View(this);
+        GradientDrawable eg = new GradientDrawable();
+        eg.setColor(0);
+        eg.setCornerRadius(22 * s);
+        eg.setStroke(Math.max(2, (int) (1.5f * s)), CARD_LINE);
+        edge.setBackground(eg);
+        card.addView(edge, new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout src = new LinearLayout(this);
         src.setGravity(Gravity.CENTER_VERTICAL);
@@ -770,31 +784,37 @@ public class Main extends Activity {
         placeWrap(card, src, 14, 14);
         srcBox = src;
 
-        int onText = LIGHT ? 0xFF1C1E22 : 0xFFF2F3F5;
+        int onText = LIGHT ? 0xFF000000 : 0xFFFFFFFF;
+        int subText = LIGHT ? 0xE6000000 : 0xE6FFFFFF;
         trackTv = tv("Nada sonando", 26, onText, true);
-        place(card, trackTv, 16, mh - 144, 280, 32);
-        artistTv = tv("Radio, Bluetooth o USB", 19, LIGHT ? 0xFF5B6270 : 0xFFD6DDE2, false);
-        place(card, artistTv, 16, mh - 110, 192, 24);
-        timePosTv = tv("", 15, LIGHT ? 0xFF5B6270 : 0xFFD6DDE2, false);
+        place(card, trackTv, 16, mh - 186, cw - 32, 34);
+        artistTv = tv("Radio, Bluetooth o USB", 22, subText, false);
+        place(card, artistTv, 16, mh - 146, cw - 142, 30);
+        timePosTv = tv("", 19, subText, true);
         timePosTv.setGravity(Gravity.RIGHT);
-        place(card, timePosTv, 206, mh - 108, 90, 22);
+        place(card, timePosTv, cw - 136, mh - 144, 120, 28);
+
+        // barra de avance: con círculo para arrastrar cuando la app que suena permite adelantar
+        seekLine = new SeekLine(this, s, LIGHT ? 0x40000000 : 0x4DFFFFFF);
+        seekLine.setOnSeek(new SeekLine.OnSeek() { public void seek(float f) { seekTo(f); } });
+        place(card, seekLine, 4, mh - 118, cw - 8, 34);
 
         FrameLayout play = new FrameLayout(this);
         GradientDrawable pg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{lighten(RED, 0.18f), RED});
-        pg.setCornerRadius(16 * s);
+        pg.setCornerRadius(18 * s);
         play.setBackground(pg);
         playIc = new ImageView(this);
         playIc.setColorFilter(onAccent());
-        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams((int) (34 * s), (int) (34 * s));
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams((int) (40 * s), (int) (40 * s));
         plp.gravity = Gravity.CENTER;
         play.addView(playIc, plp);
-        place(card, play, 16, mh - 66, 112, 54);
+        place(card, play, 16, mh - 78, 128, 62);
         lift(play, 4);
 
-        View prev = flatIcon("skip_previous", onText);
-        View next = flatIcon("skip_next", onText);
-        place(card, prev, 178, mh - 66, 54, 54);
-        place(card, next, 242, mh - 66, 54, 54);
+        View prev = flatIcon("skip_previous", onText, 50);
+        View next = flatIcon("skip_next", onText, 50);
+        place(card, prev, cw - 162, mh - 78, 62, 62);
+        place(card, next, cw - 74, mh - 78, 62, 62);
         prev.setOnClickListener(mediaClick(KeyEvent.KEYCODE_MEDIA_PREVIOUS));
         play.setOnClickListener(mediaClick(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
         next.setOnClickListener(mediaClick(KeyEvent.KEYCODE_MEDIA_NEXT));
@@ -806,13 +826,32 @@ public class Main extends Activity {
 
     private ImageView srcIc;
     private View srcBox;
+    private SeekLine seekLine;
 
-    private View flatIcon(String name, int color) {
+    /** true si la app que suena en el radio deja adelantar (el Bluetooth del celular no tiene esa orden). */
+    private boolean canSeek() {
+        return durMs > 0 && "ms".equals(curOrigin) && mediaWatcher != null && mediaWatcher.canSeek();
+    }
+
+    private void seekTo(float f) {
+        if (durMs <= 0 || mediaWatcher == null) return;
+        long ms = (long) (Math.max(0f, Math.min(1f, f)) * durMs);
+        if (mediaWatcher.seekTo(ms)) {
+            posBaseMs = ms;
+            posBaseAt = SystemClock.elapsedRealtime();
+            posKnown = true;
+            updateProgress();
+        }
+    }
+
+    private View flatIcon(String name, int color) { return flatIcon(name, color, 36); }
+
+    private View flatIcon(String name, int color, int size) {
         FrameLayout f = new FrameLayout(this);
         ImageView iv = new ImageView(this);
         iv.setImageBitmap(asset("ic/" + name + ".png"));
         iv.setColorFilter(color);
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams((int) (36 * s), (int) (36 * s));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams((int) (size * s), (int) (size * s));
         lp.gravity = Gravity.CENTER;
         f.addView(iv, lp);
         return f;
@@ -860,7 +899,7 @@ public class Main extends Activity {
         FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(-2, -2);
         tlp.gravity = Gravity.CENTER;
         comp.addView(headingTv, tlp);
-        place(board, comp, 616, 460, 60, 60);
+        place(board, comp, FREE_R - 68, 460, 60, 60);
         lift(comp, 8);
         comp.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -885,7 +924,7 @@ public class Main extends Activity {
         TextView gt = tv("Navegar", 17, onAccent(), true);
         gt.setPadding((int) (8 * s), 0, 0, 0);
         go.addView(gt);
-        place(board, go, 556, 532, 120, 56);
+        place(board, go, FREE_R - 128, 532, 120, 56);
         lift(go, 8);
         go.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { openNavigation(); }
@@ -1090,7 +1129,7 @@ public class Main extends Activity {
         if (!ok) lastFix = 0;
         speedTv.setText(ok ? String.valueOf(Math.round(kmh < 2 ? 0 : kmh)) : "--");
         gpsTv.setText(ok ? "GPS" : "Buscando GPS");
-        gpsDot.setBackground(round(ok ? 0xFF3DDC84 : MUTED, 4));
+        gpsDot.setBackground(round(ok ? 0xFF3DDC84 : MUTED, 6));
         updateMapTag();
     }
 
@@ -1349,7 +1388,8 @@ public class Main extends Activity {
             sourceTv.setText("");
             timePosTv.setText("");
             playerArt.setArt(null);
-            playerArt.setProgress(-1);
+            seekLine.setProgress(-1);
+            seekLine.setSeekable(false);
         } else {
             boolean aaOff = curSource != null && curSource.toLowerCase(ES).contains("headunit")
                     && ("Conectado".equalsIgnoreCase(curArtist) || "Connected".equalsIgnoreCase(curArtist));
@@ -1373,16 +1413,19 @@ public class Main extends Activity {
     }
 
     private void updateProgress() {
-        if (playerArt == null || (curTitle == null && curArtist == null)) return;
+        if (seekLine == null || (curTitle == null && curArtist == null)) return;
         if (durMs > 0 && posKnown) {
             long p = currentPos();
-            playerArt.setProgress(p / (float) durMs);
-            timePosTv.setText(fmt(p) + "  /  " + fmt(durMs));
+            seekLine.setProgress(p / (float) durMs);
+            seekLine.setSeekable(canSeek());
+            timePosTv.setText(fmt(p) + " / " + fmt(durMs));
         } else if (durMs > 0) {
-            playerArt.setProgress(-1);
+            seekLine.setProgress(-1);
+            seekLine.setSeekable(false);
             timePosTv.setText(fmt(durMs));
         } else {
-            playerArt.setProgress(-1);
+            seekLine.setProgress(-1);
+            seekLine.setSeekable(false);
             timePosTv.setText("");
         }
     }
@@ -1874,19 +1917,21 @@ public class Main extends Activity {
         String mode = prefs.getString("theme", "dark");
         int hr = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
         LIGHT = "light".equals(mode) || ("auto".equals(mode) && hr >= 6 && hr < 18);
+        // Alto contraste para pantallas TFT/LCD: colores sólidos (los degradados suaves se ven a escalones),
+        // bordes marcados y textos en blanco o negro puro, porque estas pantallas lavan los grises de noche.
         if (LIGHT) {
             BG = 0xFFE9ECF1; CARD = 0xFFFFFFFF; INNER = 0xFFF1F3F7; BTN = 0xFFE2E6EC; DOCK = 0xFFDDE1E8;
-            TEXT = 0xFF14161B; MUTED = 0xFF6B7280; SOFT = 0xFF3A404C; CIRCLE = 0xFFFFFFFF; ICON = 0xFF2B303A;
-            // claro «gris acero»
-            CARD_TOP = 0xFAFBFCFD; CARD_BOT = 0xF5E9ECF0; CARD_LINE = 0x1A000000; INNER_A = 0xFFDFE3E8; INNER_B = 0xFFCDD2D9;
-            RAIL_A = 0xFFA9B0BA; RAIL_B = 0xFF959CA7; RAIL_TX = 0xFF1F242B; RAIL_MU = 0xFF3D444E; PLATE = 0x1A000000;
-            MUSIC_A = 0xFF9FB6CF; MUSIC_B = 0xFF4F6987; FADE = 0xF2F8F9FB;
+            TEXT = 0xFF0A0C10; MUTED = 0xFF4A515D; SOFT = 0xFF2E3440; CIRCLE = 0xFFFFFFFF; ICON = 0xFF15181E;
+            CARD_TOP = 0xFFFFFFFF; CARD_BOT = 0xFFFFFFFF; CARD_LINE = 0x61000000; INNER_A = 0xFFD9DEE5; INNER_B = 0xFFD9DEE5;
+            // columna en gris grafito
+            RAIL_A = 0xFF474E59; RAIL_B = 0xFF474E59; RAIL_TX = 0xFFFFFFFF; RAIL_MU = 0xFFD9DEE5; PLATE = 0x1AFFFFFF;
+            MUSIC_A = 0xFF5E86BA; MUSIC_B = 0xFF22406A; FADE = 0xFFFFFFFF;
         } else {
             BG = 0xFF15171C; CARD = 0xFF1E2128; INNER = 0xFF262A33; BTN = 0xFF2A2E37; DOCK = 0xFF0D0E11;
-            TEXT = 0xFFF2F3F5; MUTED = 0xFF8B9099; SOFT = 0xFFC5C8CE; CIRCLE = 0xFF23262E; ICON = 0xFFFFFFFF;
-            CARD_TOP = 0xF0282C34; CARD_BOT = 0xF0121418; CARD_LINE = 0x1FFFFFFF; INNER_A = 0xFF30343C; INNER_B = 0xFF23262C;
-            RAIL_A = 0xFF16181D; RAIL_B = 0xFF0F1114; RAIL_TX = 0xFFF2F3F5; RAIL_MU = 0xFFAAB0BA; PLATE = 0x0DFFFFFF;
-            MUSIC_A = 0xFF3C6A78; MUSIC_B = 0xFF141A1F; FADE = 0xD90A0E12;
+            TEXT = 0xFFFFFFFF; MUTED = 0xFFB9C0CA; SOFT = 0xFFD5D8DE; CIRCLE = 0xFF23262E; ICON = 0xFFFFFFFF;
+            CARD_TOP = 0xF7181B20; CARD_BOT = 0xF7181B20; CARD_LINE = 0x42FFFFFF; INNER_A = 0xFF262A31; INNER_B = 0xFF262A31;
+            RAIL_A = 0xFF07080A; RAIL_B = 0xFF07080A; RAIL_TX = 0xFFFFFFFF; RAIL_MU = 0xFFC9CED6; PLATE = 0x12FFFFFF;
+            MUSIC_A = 0xFF2E8299; MUSIC_B = 0xFF0B1013; FADE = 0xF506090C;
         }
     }
 
@@ -2209,8 +2254,8 @@ public class Main extends Activity {
         row(w, "Ciudad", "Vacío = automática por GPS", manual.length() > 0 ? manual : (weatherNow != null && weatherNow.city != null ? weatherNow.city + " (GPS)" : "Automática"),
             edit("city_manual", "Ciudad (vacío = automática por GPS)", ""));
         LinearLayout m = section(body, "Mapa");
-        segmented(m, "Brillo del mapa", "Solo en modo oscuro", new String[]{"Bajo", "Medio", "Alto"}, prefs.getInt("map_bright", 1), new IntCb() { public void on(int i) {
-            prefs.edit().putInt("map_bright", i).apply(); rebuild();
+        segmented(m, "Contraste del mapa", "Más definición en pantallas TFT/LCD", new String[]{"Normal", "Alto", "Máximo"}, prefs.getInt("map_contrast", 1), new IntCb() { public void on(int i) {
+            prefs.edit().putInt("map_contrast", i).apply(); rebuild();
         }});
         row(m, "Diagnóstico del mapa", "Fuentes probadas y errores", null, new Runnable() { public void run() {
             new AlertDialog.Builder(Main.this, dlg()).setTitle("Diagnóstico del mapa")
