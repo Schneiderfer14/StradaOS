@@ -152,6 +152,9 @@ final class FmRadio {
     static void next(Context c) { if (!fire(piNext, "siguiente")) send(c, "xy.android.seek_next"); }
     static void prev(Context c) { if (!fire(piPrev, "anterior")) send(c, "xy.android.seek_prev"); }
 
+    /** Tecla «play» del volante: la radio la obedece si su app sigue abierta de fondo (PlayStateControlManager). */
+    static void forcePlay(Context c) { send(c, "xy.android.forceplay"); }
+
     /** Apaga la radio con su propio botón. Devuelve false si no se puede (aún no hay notificación). */
     static boolean turnOff() {
         if (!fire(piOff, "apagar")) return false;
