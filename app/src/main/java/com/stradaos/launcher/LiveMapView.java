@@ -87,6 +87,10 @@ public class LiveMapView extends View {
         deleteOld(new File(c.getCacheDir(), "tiles"));
         deleteOld(new File(c.getCacheDir(), "tiles_v2"));
         bright = c.getSharedPreferences("launcher", 0).getInt("map_bright", 1);
+        // Contraste para pantallas TFT/LCD (0 normal, 1 alto, 2 máximo). Solo un filtro al dibujar:
+        // las imágenes del mapa guardado no se tocan.
+        int con = c.getSharedPreferences("launcher", 0).getInt("map_contrast", 1);
+        if (con > 0) tile.setColorFilter(contrast(con));
         grid.setColor(Main.LIGHT ? 0xFFD5D9E0 : 0xFF22252C);
         grid.setStrokeWidth(Math.max(1, s));
         text.setColor(Main.LIGHT ? 0x99000000 : 0x99FFFFFF);
@@ -101,6 +105,25 @@ public class LiveMapView extends View {
 
     public boolean hasFix() { return !Double.isNaN(lat); }
     private final int bright;
+    private final Paint labelPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+
+    /** Modo claro: oscurece el fondo y los bordes y deja las calles blancas (ancla en el blanco).
+     *  Modo oscuro: aclara calles y avenidas y deja el fondo casi negro (ancla en el fondo). */
+    static android.graphics.ColorMatrixColorFilter contrast(int level) {
+        float k, off;
+        if (Main.LIGHT) {
+            k = level >= 2 ? 2.4f : 1.9f;
+            off = 255f * (1f - k);
+        } else {
+            k = level >= 2 ? 1.9f : 1.5f;
+            off = 30f * (1f - k);
+        }
+        return new android.graphics.ColorMatrixColorFilter(new float[]{
+                k, 0, 0, 0, off,
+                0, k, 0, 0, off,
+                0, 0, k, 0, off,
+                0, 0, 0, 1, 0});
+    }
 
     /** Mapa claro → estilo oscuro (invierte y gira el tono 180°, como el "modo noche" de muchos mapas). */
     /** Modo oscuro para mapas claros: invierte, gira el tono 180° (el agua sigue azul, los parques verdes,
@@ -278,7 +301,7 @@ public class LiveMapView extends View {
                         c.drawBitmap(b, null, dst, tile);
                         if (st == 0 && LABELS[provider] != null) {
                             Bitmap l = get(zoom, wx, ty, 1);
-                            if (l != null) c.drawBitmap(l, null, dst, tile);
+                            if (l != null) c.drawBitmap(l, null, dst, labelPaint);
                         }
                     } else {
                         c.drawLine(dst.left, dst.top, dst.right, dst.top, grid);
