@@ -32,16 +32,40 @@ final class FmRadio {
     static volatile boolean on;
     static volatile float freq = Float.NaN;
     static volatile String name, rds;
-    static volatile long seenAt;
+    static volatile long seenAt, offAt;
     static Listener listener;
     private static boolean registered;
     private static final Handler ui = new Handler(Looper.getMainLooper());
     private static final HashMap<String, Long> lastLog = new HashMap<String, Long>();
     private static final Pattern FREQ = Pattern.compile("(\\d{2,3})[.,](\\d{1,2})");
 
+    private static android.content.SharedPreferences prefs;
+
+    /** Mira si el servicio de la radio está en primer plano (= sonando de fondo). No necesita el acceso a
+     *  notificaciones: así la radio aparece en el cuadro apenas se vuelve al inicio. */
+    static void poll(Context c) {
+        boolean fg = false;
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
+            for (android.app.ActivityManager.RunningServiceInfo si : am.getRunningServices(300))
+                if (PKG.equals(si.service.getPackageName()) && si.service.getClassName().endsWith("FmService")) { fg = si.foreground; break; }
+        } catch (Throwable ignored) { return; }
+        long now = SystemClock.elapsedRealtime();
+        if (fg == on || (fg && now - offAt < 4000)) return;
+        on = fg;
+        if (fg) seenAt = now;
+        BtBridge.log("radio FM: " + (fg ? "sonando" : "detenida") + " (servicio)");
+        notifyChanged();
+    }
+
     static void register(Context c) {
         if (registered) return;
         registered = true;
+        try {
+            prefs = c.getSharedPreferences("launcher", 0);
+            float last = prefs.getFloat("fm_last", Float.NaN);   // última emisora conocida
+            if (Float.isNaN(freq) && !Float.isNaN(last)) freq = last;
+        } catch (Throwable ignored) { }
         try {
             IntentFilter f = new IntentFilter();
             for (String a : ACTIONS) f.addAction(a);
@@ -63,7 +87,11 @@ final class FmRadio {
                     String kl = k.toLowerCase();
                     if (kl.contains("freq")) {
                         float f = toMhz(v);
-                        if (!Float.isNaN(f)) { freq = f; changed = true; }
+                        if (!Float.isNaN(f)) {
+                            freq = f;
+                            changed = true;
+                            try { if (prefs != null) prefs.edit().putFloat("fm_last", f).apply(); } catch (Throwable ignored) { }
+                        }
                     } else if (v instanceof String && (kl.contains("name") || kl.equals("ps") || kl.contains("program_service"))) {
                         name = ((String) v).trim().length() > 0 ? ((String) v).trim() : null;
                         changed = true;
@@ -73,7 +101,12 @@ final class FmRadio {
                     }
                 }
             }
-            if (a != null && a.endsWith("freq_volue") && !Float.isNaN(freq)) { on = true; seenAt = SystemClock.elapsedRealtime(); changed = true; }
+            if (a != null && a.endsWith("freq_volue") && !Float.isNaN(freq)
+                    && SystemClock.elapsedRealtime() - offAt > 4000) {   // tras apagarla puede llegar un último aviso
+                on = true;
+                seenAt = SystemClock.elapsedRealtime();
+                changed = true;
+            }
             if (changed) notifyChanged();
         }
     };
@@ -88,6 +121,14 @@ final class FmRadio {
         }
         on = true;
         seenAt = SystemClock.elapsedRealtime();
+        // La notificación de la radio trae 3 botones: anterior, apagar y siguiente (FmService.showPlayingNotification).
+        try {
+            if (n.actions != null && n.actions.length >= 3) {
+                piPrev = n.actions[0].actionIntent;
+                piOff = n.actions[1].actionIntent;
+                piNext = n.actions[2].actionIntent;
+            }
+        } catch (Throwable ignored) { }
         try {
             Bundle e = n.extras;
             String title = e != null ? str(e.get("android.title")) : null;
@@ -104,8 +145,33 @@ final class FmRadio {
         notifyChanged();
     }
 
-    static void next(Context c) { send(c, "fmradio.seek.next"); }
-    static void prev(Context c) { send(c, "fmradio.seek.previous"); }
+    private static android.app.PendingIntent piPrev, piOff, piNext;
+
+    /** Emisora siguiente/anterior: se usan los botones de la notificación de la radio
+     *  (la orden va directo a su servicio); si no hay, la tecla del volante (xy.android.seek_*). */
+    static void next(Context c) { if (!fire(piNext, "siguiente")) send(c, "xy.android.seek_next"); }
+    static void prev(Context c) { if (!fire(piPrev, "anterior")) send(c, "xy.android.seek_prev"); }
+
+    /** Apaga la radio con su propio botón. Devuelve false si no se puede (aún no hay notificación). */
+    static boolean turnOff() {
+        if (!fire(piOff, "apagar")) return false;
+        on = false;
+        offAt = SystemClock.elapsedRealtime();
+        notifyChanged();
+        return true;
+    }
+
+    private static boolean fire(android.app.PendingIntent pi, String what) {
+        if (pi == null) return false;
+        try {
+            pi.send();
+            BtBridge.log("radio FM: botón " + what);
+            return true;
+        } catch (Throwable e) {
+            BtBridge.log("radio FM: botón " + what + " falló (" + e.getClass().getSimpleName() + ")");
+            return false;
+        }
+    }
 
     private static void send(Context c, String action) {
         try {
