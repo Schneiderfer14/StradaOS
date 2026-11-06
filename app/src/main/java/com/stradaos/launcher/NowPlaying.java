@@ -245,6 +245,10 @@ public class NowPlaying {
                 int v = ((Number) st).intValue();
                 if (v == 1) t.playing = true; else if (v == 0 || v == 2) t.playing = false;
             }
+            if (ACP_EVENT.equals(a) && num(x, ACP + "extra.EVENTID") == 1) {   // 1 = cambió el estado; PARAM trae el nuevo
+                long pv = num(x, ACP + "extra.PARAM");
+                if (pv == 1) t.playing = true; else if (pv == 0 || pv == 2) t.playing = false;
+            }
             long len = num(x, ACP + "extra.SONG_LENGTH");
             long pos = num(x, ACP + "extra.SONG_POSITION");
             if (len > 0) t.durationMs = len;
