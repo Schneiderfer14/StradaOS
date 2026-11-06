@@ -913,6 +913,15 @@ public class Main extends Activity {
         wasRadio = false;
     }
 
+    /** El celular empezó a sonar por su cuenta: la radio se calla (si sonaba) y el cuadro pasa a Bluetooth. */
+    private void phoneTookOver() {
+        if (!radioMuted) takeFocus();
+        radioMuted = false;
+        radioSuppressed = true;
+        wasRadio = false;
+        BtBridge.log("el celular empezó a sonar: cuadro en modo Bluetooth");
+    }
+
     /** Botón rojo en modo radio: silencia la radio o la vuelve a encender en la misma emisora, sin abrir su app. */
     private void toggleRadioMute() {
         if (!radioMuted) {
@@ -920,17 +929,28 @@ public class Main extends Activity {
         } else {
             radioMuted = false;
             releaseFocus();
-            // si mientras tanto otra app se quedó con el sonido, la radio no vuelve sola: se abre su app
+            // si mientras tanto otra app se quedó con el sonido, la radio no vuelve sola
             h.removeCallbacks(radioCheck);
+            radioTry = 0;
             h.postDelayed(radioCheck, 2500);
         }
         renderTrack();
     }
 
-    /** Comprueba que la radio volvió a sonar; si no, abre su app (y regresa al inicio). */
+    private int radioTry;
+
+    /** Comprueba que la radio volvió a sonar. Si no: primero la tecla «play» del volante (sin abrir nada);
+     *  si tampoco, abre la app de radio un momento y regresa al inicio. */
     private final Runnable radioCheck = new Runnable() { public void run() {
         FmRadio.poll(Main.this);
-        if (!FmRadio.on && !radioSuppressed && !radioMuted && FmRadio.launch(Main.this)) {
+        if (FmRadio.on || radioSuppressed || radioMuted) return;
+        if (radioTry == 0) {
+            radioTry = 1;
+            FmRadio.forcePlay(Main.this);
+            h.postDelayed(this, 1500);
+            return;
+        }
+        if (FmRadio.launch(Main.this)) {
             h.removeCallbacks(backHome);
             h.postDelayed(backHome, 2500);
         }
@@ -961,8 +981,9 @@ public class Main extends Activity {
             radioSuppressed = false;
             radioMuted = false;
             releaseFocus();              // si la callamos nosotros, la radio vuelve sola en la misma emisora
-            // si no vuelve (estaba apagada), se abre su app y a los 2,5 s se regresa al inicio
+            // si no vuelve (estaba apagada): tecla del volante y, si tampoco, se abre su app un momento
             h.removeCallbacks(radioCheck);
+            radioTry = 0;
             if (!FmRadio.on) h.postDelayed(radioCheck, 1500);
         }
         renderTrack();
@@ -1474,7 +1495,11 @@ public class Main extends Activity {
         // durante 3 s tras tocar play/pausa se ignoran los avisos que aún traen el estado anterior
         if (t.playing != null && t.playing != userWants && SystemClock.elapsedRealtime() - userToggleAt < 3000) t.playing = null;
         if (t.playing != null) {
+            boolean was = Boolean.TRUE.equals(playingState);
             playingState = t.playing;
+            // Play desde el celular con la radio en el cuadro: el Bluetooth tiene prioridad. La radio se calla y el
+            // cuadro queda en modo Bluetooth hasta que se toque la etiqueta o se abra la app de radio.
+            if (t.playing && !was && ("bt".equals(t.origin) || "ms".equals(t.origin)) && showRadio()) phoneTookOver();
         }
         posBaseMs = pos;
         posBaseAt = now;
