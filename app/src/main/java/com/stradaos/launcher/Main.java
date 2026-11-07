@@ -213,7 +213,9 @@ public class Main extends Activity {
         FmRadio.listener = new FmRadio.Listener() { public void onRadioChanged() { radioChanged(); } };
         h.post(radioTick);
         try {   // al apagar el carro la radio deja de estar permitida hasta que la abras otra vez
-            registerReceiver(sleepRx, new IntentFilter("xy.android.acc.off"));
+            IntentFilter af = new IntentFilter("xy.android.acc.off");
+            af.addAction("xy.android.acc.on");
+            registerReceiver(sleepRx, af);
         } catch (Throwable ignored) { }
         bt.onPhoneStarted = new Runnable() { public void run() { onPhoneStartedBt(); } };
         bt.onLost = new Runnable() { public void run() { btRouted = false; } };
@@ -885,7 +887,9 @@ public class Main extends Activity {
     }
 
     private final BroadcastReceiver sleepRx = new BroadcastReceiver() {
-        public void onReceive(Context c, Intent i) { forgetRadio("se apagó el carro"); }
+        public void onReceive(Context c, Intent i) {
+            forgetRadio("xy.android.acc.on".equals(i.getAction()) ? "arrancó el carro" : "se apagó el carro");
+        }
     };
 
     /** El carro se apagó o el equipo durmió: la radio vuelve a necesitar que la pidas. */
@@ -911,14 +915,15 @@ public class Main extends Activity {
         killTry = 0;
         h.removeCallbacks(radioKill);
         h.postDelayed(radioKill, 400);
+        // el celular estaba sonando justo antes (la radio, al encenderse, lo pausa): se le devuelve el play
+        if (now - phonePlayAt < 20000 && BtAvrcp.connected()) { h.removeCallbacks(resumePhone); h.postDelayed(resumePhone, 2500); }
     }
 
     private final Runnable radioKill = new Runnable() { public void run() {
         if (!FmRadio.on || radioAllowed()) return;
+        if (killTry == 0 || killTry == 4) FmRadio.close(Main.this);   // cierra su app (se apaga del todo)
         if (FmRadio.turnOff()) {
             if (radioMuted) { radioMuted = false; h.postDelayed(unmuteLater, 800); }
-            // el celular estaba sonando justo antes: se le devuelve el play
-            if (SystemClock.elapsedRealtime() - phonePlayAt < 20000 && BtAvrcp.connected()) h.postDelayed(resumePhone, 1200);
             return;
         }
         if (++killTry < 8) h.postDelayed(this, 800);
@@ -1026,7 +1031,10 @@ public class Main extends Activity {
      *  (solo si se permite: pedir el sonido pausaría también al celular que acaba de empezar). */
     private void stopRadio(boolean allowFocus) {
         boolean wasMuted = radioMuted;
-        if (!FmRadio.turnOff() && allowFocus) takeFocus();
+        FmRadio.turnOff();
+        // además se cierra su app: si su pantalla queda abierta de fondo, la radio se enciende sola
+        // cada vez que arranca el carro (eso era lo que pasaba)
+        FmRadio.close(this);
         if (wasMuted) { radioMuted = false; h.postDelayed(unmuteLater, 800); }   // el silencio se quita ya apagada
         radioByUser = false;          // para volver a sonar tendrás que pedirla otra vez
         radioAppAsked = false;
