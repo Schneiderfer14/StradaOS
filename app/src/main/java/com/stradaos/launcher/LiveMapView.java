@@ -321,9 +321,8 @@ public class LiveMapView extends View {
                             Bitmap l = get(zoom, wx, ty, 1);
                             if (l != null) c.drawBitmap(l, null, dst, labelPaint);
                         }
-                    } else {
-                        c.drawLine(dst.left, dst.top, dst.right, dst.top, grid);
-                        c.drawLine(dst.left, dst.top, dst.left, dst.bottom, grid);
+                    } else if (!drawFallback(c, zoom, wx, ty, dst)) {
+                        // sin cuadrícula: al cambiar de zoom se veía como una hoja de cuaderno un instante
                     }
                 }
             }
@@ -335,6 +334,39 @@ public class LiveMapView extends View {
             c.drawText(attr, (w - 1024 * s) / 2f + (Main.RAIL_W + 18) * s, (h - 600 * s) / 2f + 597 * s, text);
         }
         c.restore();
+    }
+
+    private final Rect fbSrc = new Rect(), fbDst = new Rect();
+
+    private Bitmap memTile(int z, int x, int y) {
+        Bitmap b = mem.get(packKey(z, x, y));
+        if (b == null) b = mem.get(provider + "_0_" + z + "_" + x + "_" + y);
+        return b;
+    }
+
+    /** Mientras llega la tesela del nuevo zoom, se dibuja la que ya está en memoria del zoom vecino (ampliada o
+     *  reducida), como hacen los mapas del celular. Devuelve false si no hay ninguna. */
+    private boolean drawFallback(Canvas c, int z, int x, int y, Rect dst) {
+        if (z > 0) {
+            Bitmap p = memTile(z - 1, x >> 1, y >> 1);
+            if (p != null) {
+                int hw = p.getWidth() / 2, hh = p.getHeight() / 2, ox = (x & 1) * hw, oy = (y & 1) * hh;
+                fbSrc.set(ox, oy, ox + hw, oy + hh);
+                c.drawBitmap(p, fbSrc, dst, tile);
+                return true;
+            }
+        }
+        boolean any = false;
+        int w2 = dst.width() / 2, h2 = dst.height() / 2;
+        for (int i = 0; i < 4; i++) {
+            Bitmap ch = memTile(z + 1, x * 2 + (i & 1), y * 2 + (i >> 1));
+            if (ch == null) continue;
+            int l = dst.left + (i & 1) * w2, t = dst.top + (i >> 1) * h2;
+            fbDst.set(l, t, l + w2 + 1, t + h2 + 1);
+            c.drawBitmap(ch, null, fbDst, tile);
+            any = true;
+        }
+        return any;
     }
 
     private boolean stale;
