@@ -212,6 +212,9 @@ public class Main extends Activity {
         FmRadio.register(this);
         FmRadio.listener = new FmRadio.Listener() { public void onRadioChanged() { radioChanged(); } };
         h.post(radioTick);
+        try {   // al apagar el carro la radio deja de estar permitida hasta que la abras otra vez
+            registerReceiver(sleepRx, new IntentFilter("xy.android.acc.off"));
+        } catch (Throwable ignored) { }
         bt.onPhoneStarted = new Runnable() { public void run() { onPhoneStartedBt(); } };
         bt.onLost = new Runnable() { public void run() { btRouted = false; } };
         h.postDelayed(btTicker, 3000);
@@ -367,12 +370,15 @@ public class Main extends Activity {
         h.removeCallbacks(aaWait);
         try { if (mediaWatcher != null) mediaWatcher.stop(); } catch (Throwable ignored) { }
         if (radioMuted) setRadioMute(false);   // nunca dejar el equipo en silencio
+        try { unregisterReceiver(sleepRx); } catch (Throwable ignored) { }
         super.onDestroy();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
+        radioAppAsked = false;   // se volvió al inicio: lo que abriste ya no cuenta como «pedir la radio»
         immersive();
         if (SDK >= 23 && !askedPerms) {
             askedPerms = true;
@@ -402,7 +408,7 @@ public class Main extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
-        leftHome = true;   // se abrió otra app: si la radio se enciende después, la encendió el usuario
+        resumed = false;
         stopGps();
         h.removeCallbacks(ticker);
         h.removeCallbacks(progressTick);
@@ -847,7 +853,7 @@ public class Main extends Activity {
     // ── radio FM del equipo ──
     private TextView radioFreqTv;
     private RadioDial radioDial;
-    private boolean radioSuppressed, wasRadio, radioMuted, leftHome;
+    private boolean radioSuppressed, wasRadio, radioMuted, resumed;
     private AudioManager.OnAudioFocusChangeListener focusL;
 
     /** El cuadro muestra la radio cuando suena (o está silenciada con el botón rojo) y no se cambió al celular. */
@@ -855,20 +861,89 @@ public class Main extends Activity {
 
     private boolean lastFmOn;
 
+    // ── la radio solo suena si TÚ la pides ──
+    // El equipo recuerda la última fuente (la radio, si alguna vez la abriste) y la vuelve a encender al
+    // arrancar el carro. StradaOS no la llama: la apaga si se enciende sin que la hayas pedido con el ícono 1,
+    // la lista de apps o la etiqueta del cuadro.
+    private boolean radioByUser;      // la radio que suena la pediste tú
+    private boolean radioAppAsked;    // abriste la app de radio y aún no vuelves al inicio
+    private long radioAskedAt, phonePlayAt, blockedAt, lastTickAt;
+    private int killTry;
+
+    /** Se abrió una app desde StradaOS: si es la radio, queda permitida. */
+    private void noteLaunch(String pkg) {
+        if (pkg != null && pkg.toLowerCase(ES).contains("radio")) askRadio();
+    }
+
+    private void askRadio() {
+        radioAskedAt = SystemClock.elapsedRealtime();
+        radioAppAsked = true;
+    }
+
+    private boolean radioAllowed() {
+        return radioByUser || radioAppAsked || SystemClock.elapsedRealtime() - radioAskedAt < 20000;
+    }
+
+    private final BroadcastReceiver sleepRx = new BroadcastReceiver() {
+        public void onReceive(Context c, Intent i) { forgetRadio("se apagó el carro"); }
+    };
+
+    /** El carro se apagó o el equipo durmió: la radio vuelve a necesitar que la pidas. */
+    private void forgetRadio(String why) {
+        if (!radioByUser && !radioAppAsked && radioAskedAt == 0) return;
+        radioByUser = false;
+        radioAppAsked = false;
+        radioAskedAt = 0;
+        BtBridge.log(why + ": la radio solo sonará si la abres tú");
+    }
+
+    /** La radio se encendió sin que la pidieras: se apaga (y el celular sigue si estaba sonando). */
+    private void blockRadio() {
+        radioSuppressed = true;
+        wasRadio = false;
+        renderTrack();
+        long now = SystemClock.elapsedRealtime();
+        if (now - blockedAt < 3000) return;
+        blockedAt = now;
+        BtBridge.log("la radio se encendió sola (el equipo recuerda la última fuente): se apaga");
+        // si su pantalla quedó encima, se vuelve al inicio para que aparezca su botón de apagar
+        if (!resumed && !FmRadio.notifShown) h.post(backHome);
+        killTry = 0;
+        h.removeCallbacks(radioKill);
+        h.postDelayed(radioKill, 400);
+    }
+
+    private final Runnable radioKill = new Runnable() { public void run() {
+        if (!FmRadio.on || radioAllowed()) return;
+        if (FmRadio.turnOff()) {
+            if (radioMuted) { radioMuted = false; h.postDelayed(unmuteLater, 800); }
+            // el celular estaba sonando justo antes: se le devuelve el play
+            if (SystemClock.elapsedRealtime() - phonePlayAt < 20000 && BtAvrcp.connected()) h.postDelayed(resumePhone, 1200);
+            return;
+        }
+        if (++killTry < 8) h.postDelayed(this, 800);
+        else BtBridge.log("no se pudo apagar la radio (revisa el acceso a notificaciones de StradaOS)");
+    } };
+
+    private final Runnable resumePhone = new Runnable() { public void run() {
+        if (showRadio() || !BtAvrcp.connected()) return;
+        BtBridge.log("el celular sigue sonando");
+        BtAvrcp.send(BtAvrcp.KEY_PLAY);
+        playingState = true;
+        userWants = true;
+        userToggleAt = SystemClock.elapsedRealtime();
+    } };
+
     private void radioChanged() {
         boolean turnedOn = FmRadio.on && !lastFmOn;
         lastFmOn = FmRadio.on;
-        // Al encender el carro la radio arranca sola (el equipo recuerda la última fuente): se apaga, porque el
-        // Bluetooth es lo predeterminado. Solo en los primeros 3 minutos y si no se salió del inicio.
-        if (turnedOn && !leftHome && SystemClock.elapsedRealtime() < 180000) {
-            BtBridge.log("la radio arrancó sola al encender: se apaga (Bluetooth por defecto)");
-            if (!FmRadio.turnOff()) takeFocus();
-            radioSuppressed = true;
-            wasRadio = false;
-            renderTrack();
-            return;
+        if (FmRadio.on && !radioByUser) {
+            if (radioAllowed()) {
+                radioByUser = true;
+                BtBridge.log("radio pedida por ti: se permite");
+            } else { blockRadio(); return; }
         }
-        if (turnedOn) radioSuppressed = false;                // la abrió el usuario: se muestra
+        if (turnedOn) radioSuppressed = false;                // la abriste tú: se muestra
         if (!FmRadio.on && radioMuted) setRadioMute(false);   // se apagó estando silenciada: vuelve el sonido
         boolean r = showRadio();
         // la radio empezó a sonar mientras sonaba el celular: se pausa el celular (nunca suenan los dos)
@@ -880,9 +955,14 @@ public class Main extends Activity {
     private long btGoneAt;
 
     private final Runnable radioTick = new Runnable() { public void run() {
-        FmRadio.poll(Main.this);   // detecta la radio aunque no esté el acceso a notificaciones
-        // celular desconectado: se quita la canción del cuadro (antes seguía con el tiempo avanzando)
         long now = SystemClock.elapsedRealtime();
+        // el equipo estuvo dormido (carro apagado): el reloj saltó más de 30 s entre dos vueltas
+        if (lastTickAt != 0 && now - lastTickAt > 30000) forgetRadio("el equipo despertó");
+        lastTickAt = now;
+        if (Boolean.TRUE.equals(playingState) && !showRadio() && (curOrigin == null || "bt".equals(curOrigin))) phonePlayAt = now;
+        FmRadio.poll(Main.this);   // detecta la radio aunque no esté el acceso a notificaciones
+        if (FmRadio.on && !radioAllowed()) radioChanged();   // suena sin que la pidieras: se apaga
+        // celular desconectado: se quita la canción del cuadro (antes seguía con el tiempo avanzando)
         if ("bt".equals(curOrigin) && BtAvrcp.ready() && !BtAvrcp.connected() && !(bt != null && bt.isConnected())) {
             if (btGoneAt == 0) btGoneAt = now;
             else if (now - btGoneAt > 4000) {
@@ -948,6 +1028,9 @@ public class Main extends Activity {
         boolean wasMuted = radioMuted;
         if (!FmRadio.turnOff() && allowFocus) takeFocus();
         if (wasMuted) { radioMuted = false; h.postDelayed(unmuteLater, 800); }   // el silencio se quita ya apagada
+        radioByUser = false;          // para volver a sonar tendrás que pedirla otra vez
+        radioAppAsked = false;
+        radioAskedAt = 0;
         radioSuppressed = true;
         wasRadio = false;
     }
@@ -1007,6 +1090,7 @@ public class Main extends Activity {
             } else if (!sendBtCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)) sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY);
         } else {
             pausePhone();
+            askRadio();                  // la pediste con la etiqueta: se permite
             radioSuppressed = false;
             if (radioMuted) setRadioMute(false);
             releaseFocus();
@@ -1602,6 +1686,7 @@ public class Main extends Activity {
                 + "\nApp Bluetooth conectada: " + (bt != null && bt.isConnected() ? "sí" : "no")
                 + "\nControl remoto AVRCP: " + (BtAvrcp.connected() ? "celular conectado" : "sin celular")
                 + "\n" + FmRadio.diag() + (radioMuted ? " (silenciada)" : radioSuppressed ? " (cambiada al celular)" : "")
+                + (radioAllowed() ? " · pedida por ti" : " · bloqueada hasta que la abras")
                 + "\nAcceso a notificaciones: " + (MediaListener.connected ? "activo" : "no (la radio se detecta igual, pero sin nombre de emisora ni flechas directas)")
                 + "\nAudio Bluetooth automático: " + (clwBt ? (btAutoOn() ? "activado" : "desactivado") : "no aplica (otra marca)")
                 + (clwBt ? "" : "\nApp de música Bluetooth: " + (btMusicApp() != null ? btMusicApp().getPackageName() : "no encontrada")
@@ -2948,6 +3033,7 @@ public class Main extends Activity {
             i.addCategory(Intent.CATEGORY_LAUNCHER);
             i.setComponent(ComponentName.unflattenFromString(c));
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+            noteLaunch(c);
             startActivity(i);
             return true;
         } catch (Exception e) {
@@ -2961,6 +3047,7 @@ public class Main extends Activity {
         i.addCategory(Intent.CATEGORY_LAUNCHER);
         i.setComponent(new ComponentName(r.activityInfo.packageName, r.activityInfo.name));
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        noteLaunch(r.activityInfo.packageName);
         try {
             startActivity(i);
         } catch (Exception e) {
@@ -2972,6 +3059,7 @@ public class Main extends Activity {
         Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
         if (i == null) return false;
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        noteLaunch(pkg);
         try {
             startActivity(i);
             return true;
