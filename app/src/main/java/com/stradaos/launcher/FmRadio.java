@@ -61,6 +61,7 @@ final class FmRadio {
     static void register(Context c) {
         if (registered) return;
         registered = true;
+        app = c.getApplicationContext();
         try {
             prefs = c.getSharedPreferences("launcher", 0);
             float last = prefs.getFloat("fm_last", Float.NaN);   // última emisora conocida
@@ -136,11 +137,14 @@ final class FmRadio {
             log("notificación", e);
             float f = parseFreq(title);
             if (Float.isNaN(f)) f = parseFreq(text);
-            if (!Float.isNaN(f)) freq = f;
-            // lo que no sea la frecuencia se toma como nombre de la emisora
+            if (!Float.isNaN(f)) setFreq(f);
+            // título = nombre de la emisora (RDS); si no tiene, la radio pone un texto genérico
             String other = Float.isNaN(parseFreq(title)) ? title : text;
-            if (other != null && Float.isNaN(parseFreq(other)) && !other.equalsIgnoreCase("FM Radio") && !other.equalsIgnoreCase("localradio"))
-                name = other;
+            name = other != null && Float.isNaN(parseFreq(other)) && !generic(other) ? other : null;
+            rds = text != null && !text.equals(other) && text.trim().length() > 0 ? text.trim() : null;
+            // la frecuencia solo viene dibujada en el ícono grande de la notificación: se lee de ahí
+            Object ic = e != null ? e.get("android.largeIcon") : null;
+            if (ic instanceof android.graphics.Bitmap) readIconAsync((android.graphics.Bitmap) ic);
         } catch (Throwable ignored) { }
         notifyChanged();
     }
@@ -187,13 +191,21 @@ final class FmRadio {
 
     /** Abre la app de radio (cuando no responde al recuperar el sonido). */
     static boolean launch(Context c) {
-        try {
-            Intent i = c.getPackageManager().getLaunchIntentForPackage(PKG);
-            if (i == null) return false;
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            c.startActivity(i);
-            return true;
-        } catch (Throwable e) { return false; }
+        // La radio no tiene ícono propio (lo pone la app «Radio» de acloud), así que se abre su pantalla directo.
+        Intent[] tries = {
+                new Intent(Intent.ACTION_MAIN).setClassName(PKG, PKG + ".FmMainActivity"),
+                new Intent("xy.android.start.fmradio"),
+                c.getPackageManager().getLaunchIntentForPackage("com.acloud.stub.localradio"),
+                c.getPackageManager().getLaunchIntentForPackage(PKG)};
+        for (Intent i : tries) {
+            if (i == null) continue;
+            try {
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                c.startActivity(i);
+                return true;
+            } catch (Throwable ignored) { }
+        }
+        return false;
     }
 
     static String diag() {
@@ -228,6 +240,86 @@ final class FmRadio {
     }
 
     private static String str(Object o) { return o == null ? null : String.valueOf(o); }
+
+    private static boolean generic(String s) {
+        String t = s.trim().toLowerCase();
+        return t.length() == 0 || t.equals("fm radio") || t.equals("radio fm") || t.equals("radio") || t.equals("fm") || t.equals("localradio");
+    }
+
+    private static void setFreq(float f) {
+        freq = f;
+        try { if (prefs != null) prefs.edit().putFloat("fm_last", f).apply(); } catch (Throwable ignored) { }
+    }
+
+    // ── lectura de la frecuencia desde el ícono de la notificación ──
+    // La radio dibuja "101.7" con un TextView común (FmUtils.createNotificationLargeIcon): misma fuente del sistema,
+    // centrado y de un solo color. Se dibujan aquí todas las frecuencias posibles igual y se elige la que coincide.
+
+    private static Context app;
+    private static int lastIconHash;
+    private static volatile boolean reading;
+
+    private static void readIconAsync(final android.graphics.Bitmap icon) {
+        if (app == null || icon == null || icon.isRecycled() || reading) return;
+        final android.graphics.Bitmap copy;
+        try { copy = icon.copy(android.graphics.Bitmap.Config.ARGB_8888, false); } catch (Throwable e) { return; }
+        int hsh = 17;
+        for (int y = 0; y < copy.getHeight(); y += 3) for (int x = 0; x < copy.getWidth(); x += 3) hsh = hsh * 31 + copy.getPixel(x, y);
+        if (hsh == lastIconHash) return;   // mismo ícono: misma frecuencia
+        lastIconHash = hsh;
+        reading = true;
+        new Thread(new Runnable() { public void run() {
+            try {
+                if (Looper.myLooper() == null) Looper.prepare();   // por si el TextView necesita un Looper
+                float f = readIcon(copy);
+                if (!Float.isNaN(f) && f != freq) { setFreq(f); notifyChanged(); }
+                BtBridge.log("radio FM: frecuencia leída del ícono = " + (Float.isNaN(f) ? "?" : fmt(f)));
+            } catch (Throwable e) {
+                BtBridge.log("radio FM: no se pudo leer el ícono (" + e.getClass().getSimpleName() + ")");
+            } finally { reading = false; }
+        } }).start();
+    }
+
+    private static float readIcon(android.graphics.Bitmap ic) {
+        int w = ic.getWidth(), h = ic.getHeight();
+        int bg = ic.getPixel(0, 0);
+        boolean[] mask = new boolean[w * h];
+        int ink = 0;
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+            int p = ic.getPixel(x, y);
+            int d = Math.abs(((p >> 16) & 255) - ((bg >> 16) & 255)) + Math.abs(((p >> 8) & 255) - ((bg >> 8) & 255)) + Math.abs((p & 255) - (bg & 255));
+            if (d > 120) { mask[y * w + x] = true; ink++; }
+        }
+        if (ink < 10) return Float.NaN;
+        android.widget.TextView tv = new android.widget.TextView(app);
+        android.graphics.Bitmap cand = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas cv = new android.graphics.Canvas(cand);
+        int[] px = new int[w * h];
+        float best = Float.NaN;
+        int bestScore = Integer.MAX_VALUE;
+        for (float size : new float[]{15f, 15.4f}) {   // los dos tamaños que usa la radio
+            tv.setTextSize(size);
+            for (int st = 875; st <= 1080; st++) {
+                String s = String.format(java.util.Locale.ENGLISH, "%.1f", st / 10f);
+                tv.setText(s);
+                tv.measure(android.view.View.MeasureSpec.makeMeasureSpec(0, 0), android.view.View.MeasureSpec.makeMeasureSpec(0, 0));
+                int mw = tv.getMeasuredWidth(), mh = tv.getMeasuredHeight();
+                int ox = (int) ((w - mw) * 0.5), oy = (int) ((h - mh) * 0.5);
+                tv.layout(0, 0, mw, mh);
+                cand.eraseColor(0);
+                cv.save();
+                cv.translate(ox, oy);
+                tv.draw(cv);
+                cv.restore();
+                cand.getPixels(px, 0, w, 0, 0, w, h);
+                int score = 0;
+                for (int i = 0; i < px.length && score < bestScore; i++) if (((px[i] >>> 24) > 100) != mask[i]) score++;
+                if (score < bestScore) { bestScore = score; best = st / 10f; }
+            }
+        }
+        cand.recycle();
+        return bestScore <= ink / 2 ? best : Float.NaN;   // si casi nada coincide, mejor no inventar
+    }
 
     /** Deja en el diagnóstico qué trae cada aviso (como mucho uno cada 30 s por tipo). */
     private static void log(String what, Bundle x) {
