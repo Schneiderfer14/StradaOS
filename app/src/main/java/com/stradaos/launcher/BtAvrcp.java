@@ -39,6 +39,9 @@ final class BtAvrcp {
         }
     }
 
+    /** true si el perfil AVRCP del sistema está disponible (para saber si «sin celular» es confiable). */
+    static boolean ready() { return proxy != null; }
+
     /** true si hay un celular conectado como fuente de música AVRCP. */
     static boolean connected() {
         try { return proxy != null && !proxy.getConnectedDevices().isEmpty(); } catch (Throwable e) { return false; }
