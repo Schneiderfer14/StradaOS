@@ -25,7 +25,9 @@ final class FmRadio {
             "com.android.radio.widget.freq_volue",
             "com.acloud.intent.android.MAINUI_UPDATE",
             "com.acloud.intent.android.MEDIA_OPEN",
-            "com.acloud.intent.android.MEDIA_CLOSE"};
+            "com.acloud.intent.android.MEDIA_CLOSE",
+            // la radio avisa la emisora en cada cambio (FmMainActivity.xySendFmRadipFreq): {"113","1",encendida,"0",bajo,alto}
+            "com.acloud.intent.android.XY.ANDROID.CANBUSDISPINFO1"};
 
     interface Listener { void onRadioChanged(); }
 
@@ -84,6 +86,21 @@ final class FmRadio {
             Bundle x = i.getExtras();
             log(a, x);
             boolean changed = false;
+            if (a != null && a.endsWith("CANBUSDISPINFO1")) {
+                String[] ex = i.getStringArrayExtra("extras");
+                if (ex != null && ex.length >= 6 && "113".equals(ex[0])) {
+                    try {
+                        double d = Integer.parseInt(ex[5].trim()) * 256 + Integer.parseInt(ex[4].trim());
+                        while (d > 200) d /= 10;   // 10210 → 102.1
+                        if (d >= 64 && d <= 108.5 && (float) d != freq) {
+                            setFreq((float) d);
+                            BtBridge.log("radio FM: emisora " + fmt(freq) + " MHz (aviso de la radio)");
+                            notifyChanged();
+                        }
+                    } catch (Throwable ignored) { }
+                }
+                return;
+            }
             if (x != null) {
                 for (String k : x.keySet()) {
                     Object v = x.get(k);
@@ -161,6 +178,21 @@ final class FmRadio {
 
     /** Tecla «play» del volante: la radio la obedece si su app sigue abierta de fondo (PlayStateControlManager). */
     static void forcePlay(Context c) { send(c, "xy.android.forceplay"); }
+
+    /** Cierra la app de radio por completo, con el mismo aviso que usa el sistema para cerrar apps
+     *  (MAINUI_UPDATE «KillAppSync»). Al cerrarse, su pantalla termina su proceso (System.exit): la radio
+     *  se apaga y ya no puede volver a encenderse sola al arrancar el carro (FmMainActivity, al recibir
+     *  «xy.android.acc.on», enciende la radio si su pantalla sigue abierta de fondo). */
+    static void close(Context c) {
+        try {
+            Intent i = new Intent("com.acloud.intent.android.MAINUI_UPDATE");
+            i.putExtra("extras", new String[]{"KillAppSync", "stradaos", "?" + PKG + "?"});
+            c.sendBroadcast(i);
+            BtBridge.log("radio FM: se cierra su app (así no se enciende sola al arrancar)");
+        } catch (Throwable e) {
+            BtBridge.log("radio FM: no se pudo cerrar su app (" + e.getClass().getSimpleName() + ")");
+        }
+    }
 
     /** Apaga la radio con su propio botón. Devuelve false si no se puede (aún no hay notificación). */
     static boolean turnOff() {
