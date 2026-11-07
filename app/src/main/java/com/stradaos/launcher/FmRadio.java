@@ -33,6 +33,8 @@ final class FmRadio {
     static volatile float freq = Float.NaN;
     static volatile String name, rds;
     static volatile long seenAt, offAt;
+    /** true mientras la notificación de la radio está puesta (= su pantalla NO está encima). */
+    static volatile boolean notifShown;
     static Listener listener;
     private static boolean registered;
     private static final Handler ui = new Handler(Looper.getMainLooper());
@@ -114,6 +116,7 @@ final class FmRadio {
 
     /** Notificación de la radio (desde el lector de notificaciones). */
     static void onNotification(Notification n, boolean posted) {
+        notifShown = posted;
         if (!posted) {
             on = false;
             BtBridge.log("radio FM: notificación quitada");
@@ -291,26 +294,27 @@ final class FmRadio {
             if (d > 120) { mask[y * w + x] = true; ink++; }
         }
         if (ink < 10) return Float.NaN;
-        android.widget.TextView tv = new android.widget.TextView(app);
+        // Se dibuja con Paint (un TextView fuera de la pantalla principal fallaba con NullPointerException);
+        // mismas medidas que un TextView: alto con el margen de la fuente y texto centrado.
+        android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        p.setTypeface(android.graphics.Typeface.DEFAULT);
+        p.setColor(0xFFFFFFFF);
+        android.util.DisplayMetrics dm = app.getResources().getDisplayMetrics();
         android.graphics.Bitmap cand = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
         android.graphics.Canvas cv = new android.graphics.Canvas(cand);
         int[] px = new int[w * h];
         float best = Float.NaN;
         int bestScore = Integer.MAX_VALUE;
         for (float size : new float[]{15f, 15.4f}) {   // los dos tamaños que usa la radio
-            tv.setTextSize(size);
+            p.setTextSize(android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, size, dm));
+            android.graphics.Paint.FontMetricsInt fm = p.getFontMetricsInt();
+            int mh = fm.bottom - fm.top;
             for (int st = 875; st <= 1080; st++) {
                 String s = String.format(java.util.Locale.ENGLISH, "%.1f", st / 10f);
-                tv.setText(s);
-                tv.measure(android.view.View.MeasureSpec.makeMeasureSpec(0, 0), android.view.View.MeasureSpec.makeMeasureSpec(0, 0));
-                int mw = tv.getMeasuredWidth(), mh = tv.getMeasuredHeight();
+                int mw = (int) Math.ceil(p.measureText(s));
                 int ox = (int) ((w - mw) * 0.5), oy = (int) ((h - mh) * 0.5);
-                tv.layout(0, 0, mw, mh);
                 cand.eraseColor(0);
-                cv.save();
-                cv.translate(ox, oy);
-                tv.draw(cv);
-                cv.restore();
+                cv.drawText(s, ox, oy - fm.top, p);
                 cand.getPixels(px, 0, w, 0, 0, w, h);
                 int score = 0;
                 for (int i = 0; i < px.length && score < bestScore; i++) if (((px[i] >>> 24) > 100) != mask[i]) score++;
